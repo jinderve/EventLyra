@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { AddTalkForm } from "@/components/add-talk-form";
+import { AddTalkForm, TalkForm } from "@/components/add-talk-form";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { TalkTags } from "@/components/talk-tags";
 import {
   exportSessionHref,
   getHealth,
@@ -10,8 +11,9 @@ import {
   listSessions,
   listTalks,
   patchSession,
-  resetSession,
   startSessionUrl,
+  stopSession,
+  updateTalk,
   uploadSessionFile,
   type ProductionRow,
   type Session,
@@ -19,20 +21,27 @@ import {
 } from "@/lib/api";
 import { startMicrophone } from "@/lib/mic";
 import { cn } from "@/lib/utils";
-
-const SOURCES = [
-  { id: "auto", label: "Detect" },
-  { id: "es", label: "Spanish" },
-  { id: "en", label: "English" },
-  { id: "pt", label: "Portuguese" },
-];
-const TARGETS = SOURCES.filter((item) => item.id !== "auto");
+import { languageLabel } from "@/lib/watch-prefs";
 
 type AudioChoice = "file" | "mic" | "url";
 
-function defaultDraft(session: Session) {
-  const url = session.youtube_url || session.playback?.youtube_url || "";
-  return { url, mode: (url ? "url" : "file") as AudioChoice };
+function defaultDraft(session: Session, talk?: Talk) {
+  const url = talk?.youtube_url || session.youtube_url || session.playback?.youtube_url || "";
+  const kind = (talk?.audio_kind || session.audio_kind || (url ? "url" : "file")) as AudioChoice;
+  return { url, mode: kind === "mic" || kind === "file" || kind === "url" ? kind : "url" };
+}
+
+function audioLabel(mode: AudioChoice, url: string) {
+  if (mode === "mic") return "Microphone";
+  if (mode === "file") return "File";
+  return url ? "YouTube" : "No audio yet";
+}
+
+function canPublish(talk: Talk | undefined, session: Session | undefined, url: string, mode: AudioChoice) {
+  const source = talk?.source_lang || session?.source_lang;
+  const target = talk?.target_lang || session?.target_lang;
+  const hasAudio = mode === "mic" || mode === "file" || Boolean(url || talk?.youtube_url);
+  return Boolean(source && target && hasAudio);
 }
 
 export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
@@ -43,6 +52,7 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
   const [chunkSeconds, setChunkSeconds] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<
     Record<string, { file?: File; url: string; mode: AudioChoice }>
   >({});
@@ -67,7 +77,8 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
     setDrafts((current) => {
       const next = { ...current };
       for (const session of listed.sessions) {
-        next[session.id] ??= defaultDraft(session);
+        const talk = catalog.talks.find((item) => item.channel_id === session.id);
+        next[session.id] ??= defaultDraft(session, talk);
       }
       return next;
     });
@@ -88,9 +99,8 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
     return drafts[id] ?? { url: "", mode: "url" as AudioChoice };
   }
 
-  async function saveLanguages(session: Session, source: string, target: string) {
-    await patchSession(session.id, { source_lang: source, target_lang: target });
-    await refresh();
+  function talkFor(session: Session) {
+    return talks.find((item) => item.channel_id === session.id || item.id === session.talk_id);
   }
 
   async function start(session: Session) {
@@ -106,8 +116,9 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
         if (!choice.file) throw new Error("Choose a file before Start live.");
         await uploadSessionFile(session.id, choice.file);
       } else if (choice.mode === "url") {
-        if (!choice.url.trim()) throw new Error("Paste a YouTube URL before Start live.");
-        await startSessionUrl(session.id, choice.url.trim());
+        const url = choice.url.trim() || session.youtube_url || "";
+        if (!url) throw new Error("Paste a YouTube URL before Start live.");
+        await startSessionUrl(session.id, url);
       } else {
         mics.current[session.id]?.stop();
         mics.current[session.id] = await startMicrophone(
@@ -130,7 +141,7 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
     try {
       mics.current[session.id]?.stop();
       delete mics.current[session.id];
-      await resetSession(session.id);
+      await stopSession(session.id);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not stop the session.");
@@ -139,7 +150,25 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
     }
   }
 
+  async function publish(talk: Talk, next: boolean) {
+    setBusy(talk.id);
+    setError(null);
+    try {
+      await updateTalk(talk.id, { published: next });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update publish state.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const extras = talks.filter((talk) => !talk.channel_id);
+  const liveSessions = sessions.filter((session) => {
+    const talk = talkFor(session);
+    return Boolean(talk?.published ?? session.published);
+  });
+  const visible = variant === "live" ? liveSessions : sessions;
 
   return (
     <section className="space-y-6">
@@ -149,7 +178,7 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
             {variant === "live" ? "LIVE DESK" : "CHANNELS"}
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            {variant === "live" ? "Operate the live rooms" : "Configure the rooms"}
+            {variant === "live" ? "Operate published rooms" : "Configure the rooms"}
           </h1>
         </div>
         <Badge tone={models?.includes("+") ? "online" : "muted"}>
@@ -158,19 +187,27 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
       </header>
       <p className="max-w-2xl text-sm text-muted">
         {variant === "live"
-          ? "Measured infer latency, real audience count from open caption streams, then stop and export. Confidence is not measured in this engine."
-          : "This process owns channels 1..K. Default talks already have image, description, tags, and a YouTube URL. Extra talks stay in Events until a GPU channel is free."}
+          ? "Only published sessions appear here. Start, stop, overlay, and export the transcript. Stop keeps the cues so SRT, VTT, and TXT still download. Confidence is not measured."
+          : "Review source, target, and audio, then publish. Edit a room to change its setup. Live desk and Events only show published rooms."}
       </p>
       {variant === "setup" ? <AddTalkForm onCreated={() => void refresh()} /> : null}
       {error ? <p className="text-live">{error}</p> : null}
+      {variant === "live" && !visible.length ? (
+        <p className="text-muted">
+          No published sessions yet. Configure a room in Sessions and press Publish.
+        </p>
+      ) : null}
       {!sessions.length ? <p className="text-muted">Loading channels…</p> : null}
       <ul className="grid gap-5">
-        {sessions.map((session) => {
+        {visible.map((session) => {
+          const talk = talkFor(session);
           const row = rows.find((item) => item.id === session.id);
           const live = session.status === "processing";
           const choice = draft(session.id);
           const cueCount = row?.cue_count ?? session.cues.length;
           const watchers = row?.watchers ?? session.watchers ?? 0;
+          const published = Boolean(talk?.published ?? session.published);
+          const ready = canPublish(talk, session, choice.url, choice.mode);
           return (
             <li key={session.id} className="surface p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -194,201 +231,155 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
                     </p>
                   </div>
                 </div>
-                <Badge tone={live ? "live" : session.status === "error" ? "live" : "muted"}>
-                  {live ? "EN VIVO" : session.status}
-                </Badge>
-              </div>
-              {session.description ? (
-                <p className="mt-4 text-sm text-muted">{session.description}</p>
-              ) : null}
-              {session.tags?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {session.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="border border-line px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-muted"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <label className="space-y-2 text-sm">
-                  Source
-                  <select
-                    className="h-11 w-full rounded-control border border-line bg-[#0e131c] px-3"
-                    value={session.source_lang}
-                    onChange={(event) =>
-                      void saveLanguages(session, event.target.value, session.target_lang)
-                    }
-                  >
-                    {SOURCES.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm">
-                  Target
-                  <select
-                    className="h-11 w-full rounded-control border border-line bg-[#0e131c] px-3"
-                    value={session.target_lang}
-                    onChange={(event) =>
-                      void saveLanguages(session, session.source_lang, event.target.value)
-                    }
-                  >
-                    {TARGETS.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <fieldset className="mt-5 space-y-3">
-                <legend className="text-xs uppercase tracking-[0.16em] text-muted">
-                  Audio
-                </legend>
                 <div className="flex flex-wrap gap-2">
-                  {(["file", "mic", "url"] as AudioChoice[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={cn(
-                        "h-9 rounded-control border px-3 text-sm",
-                        choice.mode === mode
-                          ? "border-primary text-ink"
-                          : "border-line text-muted",
-                      )}
-                      onClick={() =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [session.id]: { ...choice, mode },
-                        }))
-                      }
-                    >
-                      {mode === "file" ? "File" : mode === "mic" ? "Microphone" : "YouTube URL"}
-                    </button>
-                  ))}
+                  <Badge tone={published ? "online" : "muted"}>
+                    {published ? "Published" : "Draft"}
+                  </Badge>
+                  <Badge tone={live ? "live" : session.status === "error" ? "live" : "muted"}>
+                    {live ? "EN VIVO" : session.status}
+                  </Badge>
                 </div>
-                {choice.mode === "file" ? (
-                  <input
-                    type="file"
-                    accept="audio/*,video/*"
-                    className="block w-full text-sm"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      setDrafts((current) => ({
-                        ...current,
-                        [session.id]: { ...choice, file, mode: "file" },
-                      }));
-                    }}
-                  />
-                ) : null}
-                {choice.mode === "url" ? (
-                  <div className="space-y-2">
-                    <input
-                      type="url"
-                      placeholder="https://www.youtube.com/watch?v=…"
-                      className="h-11 w-full rounded-control border border-line bg-[#0e131c] px-3 text-sm"
-                      value={choice.url}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [session.id]: { ...choice, url: event.target.value, mode: "url" },
-                        }))
-                      }
-                    />
-                    <p className="text-xs text-muted">
-                      Public YouTube live or uploaded talk. EventLyra pulls the audio. Not RTMP.
+              </div>
+              <TalkTags tags={session.tags} className="mt-3" />
+
+              {variant === "setup" ? (
+                <>
+                  <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs uppercase tracking-[0.14em] text-muted">Source</dt>
+                      <dd className="mt-1">{languageLabel(session.source_lang)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-[0.14em] text-muted">Target</dt>
+                      <dd className="mt-1">{languageLabel(session.target_lang)}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs uppercase tracking-[0.14em] text-muted">Audio</dt>
+                      <dd className="mt-1">{audioLabel(choice.mode, choice.url)}</dd>
+                      {choice.mode === "url" && choice.url ? (
+                        <p className="mt-1 truncate text-xs text-muted" title={choice.url}>
+                          {choice.url}
+                        </p>
+                      ) : null}
+                    </div>
+                  </dl>
+                  {editing === session.id && talk ? (
+                    <div className="mt-5">
+                      <TalkForm
+                        talk={talk}
+                        onDone={() => {
+                          setEditing(null);
+                          void refresh();
+                        }}
+                        onCancel={() => setEditing(null)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <Button variant="outline" onClick={() => setEditing(session.id)}>
+                        Edit session
+                      </Button>
+                      <Button
+                        disabled={busy === talk?.id || (!published && !ready)}
+                        onClick={() => talk && void publish(talk, !published)}
+                      >
+                        {published ? "Unpublish" : "Publish"}
+                      </Button>
+                    </div>
+                  )}
+                  {!ready && !published ? (
+                    <p className="mt-3 text-sm text-muted">
+                      Publish needs a source, a target, and an audio source.
                     </p>
-                  </div>
-                ) : null}
-                {choice.mode === "mic" ? (
-                  <p className="text-sm text-muted">
-                    Start live opens this tab’s microphone. Another tab should take another channel.
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <p className="mt-4 text-sm text-ink">
+                    {languageLabel(session.source_lang)} → {languageLabel(session.target_lang)}
+                    <span className="text-muted"> · {audioLabel(choice.mode, choice.url)}</span>
                   </p>
-                ) : null}
-              </fieldset>
-              <dl
-                className={cn(
-                  "mt-5 grid gap-3 text-sm",
-                  variant === "live" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-4",
-                )}
-              >
-                <div>
-                  <dt className="text-xs text-muted">Infer</dt>
-                  <dd>{row?.latency_ms != null ? `${row.latency_ms} ms` : "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Audience</dt>
-                  <dd>{watchers}</dd>
-                </div>
-                {variant === "live" ? (
-                  <div>
-                    <dt className="text-xs text-muted">Confidence</dt>
-                    <dd>—</dd>
-                    <p className="text-[11px] text-muted">Not measured</p>
+                  {choice.mode === "file" ? (
+                    <input
+                      type="file"
+                      accept="audio/*,video/*"
+                      className="mt-4 block w-full text-sm"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        setDrafts((current) => ({
+                          ...current,
+                          [session.id]: { ...choice, file, mode: "file" },
+                        }));
+                      }}
+                    />
+                  ) : null}
+                  <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                    <div>
+                      <dt className="text-xs text-muted">Infer</dt>
+                      <dd>{row?.latency_ms != null ? `${row.latency_ms} ms` : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Audience</dt>
+                      <dd>{watchers}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Queue wait</dt>
+                      <dd>{row?.queue_wait_ms != null ? `${row.queue_wait_ms} ms` : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Cues</dt>
+                      <dd>{cueCount}</dd>
+                    </div>
+                  </dl>
+                  {session.error ? <p className="mt-3 text-sm text-live">{session.error}</p> : null}
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Button
+                      variant="live"
+                      disabled={busy === session.id}
+                      onClick={() => void start(session)}
+                    >
+                      Start live
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={busy === session.id}
+                      onClick={() => void stop(session)}
+                    >
+                      Stop live
+                    </Button>
+                    <Link
+                      to={`/watch/${session.id}`}
+                      className={buttonVariants({ variant: "ghost" })}
+                    >
+                      Audience
+                    </Link>
+                    <Link
+                      to={`/overlay/${session.id}`}
+                      className={buttonVariants({ variant: "ghost" })}
+                    >
+                      Overlay
+                    </Link>
                   </div>
-                ) : null}
-                <div>
-                  <dt className="text-xs text-muted">Queue wait</dt>
-                  <dd>{row?.queue_wait_ms != null ? `${row.queue_wait_ms} ms` : "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Cues</dt>
-                  <dd>{cueCount}</dd>
-                </div>
-              </dl>
-              {session.error ? <p className="mt-3 text-sm text-live">{session.error}</p> : null}
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Button
-                  variant="live"
-                  disabled={busy === session.id}
-                  onClick={() => void start(session)}
-                >
-                  Start live
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={busy === session.id}
-                  onClick={() => void stop(session)}
-                >
-                  Stop live
-                </Button>
-                <Link
-                  to={`/watch/${session.id}`}
-                  className={buttonVariants({ variant: "ghost" })}
-                >
-                  Audience
-                </Link>
-                <Link
-                  to={`/overlay/${session.id}`}
-                  className={buttonVariants({ variant: "ghost" })}
-                >
-                  Overlay
-                </Link>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="self-center text-xs uppercase tracking-[0.16em] text-muted">
-                  Export
-                </span>
-                {(["srt", "vtt", "txt"] as const).map((fmt) => (
-                  <a
-                    key={fmt}
-                    href={exportSessionHref(session.id, fmt)}
-                    className={cn(
-                      buttonVariants({ variant: "outline" }),
-                      cueCount === 0 && "pointer-events-none opacity-40",
-                    )}
-                    aria-disabled={cueCount === 0}
-                  >
-                    {fmt.toUpperCase()}
-                  </a>
-                ))}
-              </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="self-center text-xs uppercase tracking-[0.16em] text-muted">
+                      Export
+                    </span>
+                    {(["srt", "vtt", "txt"] as const).map((fmt) => (
+                      <a
+                        key={fmt}
+                        href={exportSessionHref(session.id, fmt)}
+                        className={cn(
+                          buttonVariants({ variant: "outline" }),
+                          cueCount === 0 && "pointer-events-none opacity-40",
+                        )}
+                        aria-disabled={cueCount === 0}
+                      >
+                        {fmt.toUpperCase()}
+                      </a>
+                    ))}
+                  </div>
+                </>
+              )}
             </li>
           );
         })}
@@ -397,17 +388,53 @@ export function SessionBoard({ variant }: { variant: "setup" | "live" }) {
         <div className="space-y-3">
           <h2 className="text-lg font-semibold">Catalog only</h2>
           <p className="text-sm text-muted">
-            These talks are saved and visible in Events. They do not have a GPU
-            channel on this process.
+            These talks are saved. They do not have a GPU channel, so they cannot
+            go to Live desk.
           </p>
           <ul className="grid gap-3">
             {extras.map((talk) => (
               <li key={talk.id} className="surface p-4">
-                <p className="font-medium">{talk.title}</p>
-                <p className="text-sm text-muted">
-                  {talk.room || "Room unpublished"}
-                  {talk.speakers?.length ? ` · ${talk.speakers.join(", ")}` : ""}
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{talk.title}</p>
+                    <p className="text-sm text-muted">
+                      {talk.room || "Room unpublished"}
+                      {talk.speakers?.length ? ` · ${talk.speakers.join(", ")}` : ""}
+                    </p>
+                    <p className="mt-1 text-sm">
+                      {languageLabel(talk.source_lang)} → {languageLabel(talk.target_lang)}
+                    </p>
+                    <TalkTags tags={talk.tags} className="mt-2" />
+                  </div>
+                  <Badge tone={talk.published ? "online" : "muted"}>
+                    {talk.published ? "Published" : "Draft"}
+                  </Badge>
+                </div>
+                {editing === talk.id ? (
+                  <div className="mt-4">
+                    <TalkForm
+                      talk={talk}
+                      onDone={() => {
+                        setEditing(null);
+                        void refresh();
+                      }}
+                      onCancel={() => setEditing(null)}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Button variant="outline" onClick={() => setEditing(talk.id)}>
+                      Edit session
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled
+                      title="A GPU channel is required to publish to Live desk"
+                    >
+                      Publish
+                    </Button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

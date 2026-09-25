@@ -24,6 +24,8 @@ export type Talk = {
   description?: string | null;
   image_url?: string | null;
   youtube_url?: string | null;
+  audio_kind?: string | null;
+  published?: boolean;
   channel_id?: string | null;
   status?: string;
   live?: boolean;
@@ -41,6 +43,8 @@ export type Session = {
   youtube_url?: string | null;
   track?: string | null;
   talk_id?: string | null;
+  published?: boolean;
+  audio_kind?: string | null;
   watchers?: number;
   source_lang: string;
   target_lang: string;
@@ -129,7 +133,7 @@ export function listTalks() {
   return parse<{ talks: Talk[]; sessions_per_gpu: number }>(fetch("/api/talks"));
 }
 
-export function createTalk(body: {
+export type TalkDraft = {
   title: string;
   room?: string;
   track?: string;
@@ -140,10 +144,24 @@ export function createTalk(body: {
   youtube_url?: string;
   source_lang?: string;
   target_lang?: string;
-}) {
+  audio_kind?: string;
+  published?: boolean;
+};
+
+export function createTalk(body: TalkDraft) {
   return parse<{ talk: Talk; channel_id: string | null; talks: Talk[] }>(
     fetch("/api/talks", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export function updateTalk(id: string, body: Partial<TalkDraft>) {
+  return parse<{ talk: Talk; talks: Talk[] }>(
+    fetch(`/api/talks/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
@@ -178,6 +196,10 @@ export function patchSession(
 
 export function resetSession(id: string) {
   return parse<Session>(fetch(`/api/sessions/${id}/reset`, { method: "POST" }));
+}
+
+export function stopSession(id: string) {
+  return parse<Session>(fetch(`/api/sessions/${id}/stop`, { method: "POST" }));
 }
 
 export function uploadSessionFile(id: string, file: File) {

@@ -1,18 +1,22 @@
 export type CaptionText = "original" | "translation" | "both";
 export type CaptionSize = "s" | "m" | "l" | "xl";
+export type CaptionBg = "none" | "black";
 
 export type WatchPrefs = {
   text: CaptionText;
   size: CaptionSize;
   volume: number;
+  captionBg: CaptionBg;
 };
 
-const STORAGE_KEY = "eventlyra.watch.captions.v2";
+const STORAGE_KEY = "eventlyra.watch.captions.v3";
+const LEGACY_KEY = "eventlyra.watch.captions.v2";
 
 export const DEFAULT_WATCH_PREFS: WatchPrefs = {
   text: "translation",
   size: "s",
   volume: 80,
+  captionBg: "black",
 };
 
 export function clampVolume(value: number): number {
@@ -41,22 +45,29 @@ export function languageLabel(code: string | null | undefined): string {
   return code ? code.toUpperCase() : "—";
 }
 
+function parsePrefs(raw: string): WatchPrefs {
+  const parsed = JSON.parse(raw) as Partial<WatchPrefs>;
+  const text =
+    parsed.text === "original" || parsed.text === "translation" || parsed.text === "both"
+      ? parsed.text
+      : DEFAULT_WATCH_PREFS.text;
+  const size = CAPTION_SIZES.includes(parsed.size as CaptionSize)
+    ? (parsed.size as CaptionSize)
+    : DEFAULT_WATCH_PREFS.size;
+  const volume = clampVolume(
+    typeof parsed.volume === "number" ? parsed.volume : DEFAULT_WATCH_PREFS.volume,
+  );
+  const captionBg = parsed.captionBg === "none" || parsed.captionBg === "black"
+    ? parsed.captionBg
+    : DEFAULT_WATCH_PREFS.captionBg;
+  return { text, size, volume, captionBg };
+}
+
 export function loadWatchPrefs(): WatchPrefs {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_KEY);
     if (!raw) return DEFAULT_WATCH_PREFS;
-    const parsed = JSON.parse(raw) as Partial<WatchPrefs>;
-    const text =
-      parsed.text === "original" || parsed.text === "translation" || parsed.text === "both"
-        ? parsed.text
-        : DEFAULT_WATCH_PREFS.text;
-    const size = CAPTION_SIZES.includes(parsed.size as CaptionSize)
-      ? (parsed.size as CaptionSize)
-      : DEFAULT_WATCH_PREFS.size;
-    const volume = clampVolume(
-      typeof parsed.volume === "number" ? parsed.volume : DEFAULT_WATCH_PREFS.volume,
-    );
-    return { text, size, volume };
+    return parsePrefs(raw);
   } catch {
     return DEFAULT_WATCH_PREFS;
   }

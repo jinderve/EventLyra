@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from eventlyra.config import Settings
 from eventlyra.server.app import create_app
 from services.live_engine.sessions import Session, SessionManager
-from services.live_engine.talks import add_talk, decorate_talks, load_talks
+from services.live_engine.talks import add_talk, decorate_talks, load_talks, update_talk
 
 
 def test_defaults_son_las_dos_charlas_de_nerdearla():
@@ -77,3 +77,46 @@ def test_api_talks_defaults_y_extra_sin_canal(tmp_path):
         event = client.get("/api/event").json()
         assert len(event["talks"]) == 3
         assert event["talks"][2]["channel_id"] is None
+        assert event["talks"][0]["published"] is True
+        assert event["talks"][2]["published"] is False
+
+
+def test_update_and_publish_talk(tmp_path):
+    add_talk(tmp_path, {"title": "Extra talk", "youtube_url": "https://youtu.be/abc"})
+    talks = load_talks(tmp_path)
+    extra = talks[-1]
+    updated = update_talk(
+        tmp_path,
+        extra["id"],
+        {"title": "Community room", "published": True, "target_lang": "pt"},
+    )
+    assert updated["title"] == "Community room"
+    assert updated["published"] is True
+    assert updated["target_lang"] == "pt"
+    patched_default = update_talk(
+        tmp_path,
+        "salatino-feedback",
+        {"published": False, "room": "Stream C"},
+    )
+    assert patched_default["published"] is False
+    assert patched_default["room"] == "Stream C"
+    reloaded = load_talks(tmp_path)
+    assert reloaded[0]["published"] is False
+    assert reloaded[0]["room"] == "Stream C"
+    assert reloaded[-1]["title"] == "Community room"
+
+
+def test_api_patch_talk_publish(tmp_path):
+    app = create_app(
+        Settings(sessions_per_gpu=2, work_dir=tmp_path, load_models=False)
+    )
+    with TestClient(app) as client:
+        patched = client.patch(
+            "/api/talks/salatino-feedback",
+            json={"published": False, "target_lang": "pt"},
+        )
+        assert patched.status_code == 200
+        assert patched.json()["talk"]["published"] is False
+        session = client.get("/api/sessions/1").json()
+        assert session["published"] is False
+        assert session["target_lang"] == "pt"

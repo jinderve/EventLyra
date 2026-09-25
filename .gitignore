@@ -2,6 +2,9 @@
 .vendor-ui-ux/
 .vendor-frontend/
 
+# Skills
+.cursor/
+
 # Entorno y secretos
 .env
 .env.*

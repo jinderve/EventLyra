@@ -186,7 +186,7 @@ export function YouTubeStage({
   }, [volume]);
 
   return (
-    <div className="pointer-events-none aspect-video w-full bg-black">
+    <div className="pointer-events-none absolute inset-0 h-full w-full bg-black">
       <div id={hostId} className="h-full w-full" />
     </div>
   );

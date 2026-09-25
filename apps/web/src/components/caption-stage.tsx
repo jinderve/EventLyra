@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { CaptionOverlay } from "@/components/caption-overlay";
 import { WatchControls } from "@/components/watch-controls";
 import { YouTubeStage } from "@/components/youtube-stage";
 import { cueAt, liveAlignedTime } from "@/lib/cues";
 import type { Cue, Session } from "@/lib/api";
-import { CAPTION_SIZE_CLASS, type CaptionSize, type CaptionText } from "@/lib/watch-prefs";
+import { cn } from "@/lib/utils";
+import type { CaptionBg, CaptionSize, CaptionText } from "@/lib/watch-prefs";
 
 export function CaptionStage({
   sessionId,
@@ -17,9 +19,11 @@ export function CaptionStage({
   settingsOpen,
   captionText,
   captionSize,
+  captionBg,
   onSettings,
   onCaptionText,
   onCaptionSize,
+  onCaptionBg,
   onCloseSettings,
   onShownChange,
   volume,
@@ -34,21 +38,26 @@ export function CaptionStage({
   settingsOpen: boolean;
   captionText: CaptionText;
   captionSize: CaptionSize;
+  captionBg: CaptionBg;
   volume: number;
   onCaptions: () => void;
   onTranscript: () => void;
   onSettings: () => void;
   onCaptionText: (value: CaptionText) => void;
   onCaptionSize: (value: CaptionSize) => void;
+  onCaptionBg: (value: CaptionBg) => void;
   onCloseSettings: () => void;
   onVolume: (value: number) => void;
   onShownChange?: (cue: Cue | null) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const [clockCue, setClockCue] = useState<Cue | null>(null);
   const [seekableLive, setSeekableLive] = useState(false);
   const [holdingVod, setHoldingVod] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [bottomHover, setBottomHover] = useState(false);
   const playback = session?.playback;
   const kind = playback?.kind ?? null;
   const isYouTubeLive = kind === "youtube" && Boolean(playback?.is_live);
@@ -64,8 +73,8 @@ export function CaptionStage({
     kind === "audio" ||
     (kind === "youtube" && !isYouTubeLive) ||
     (isYouTubeLive && seekableLive);
-  const shown =
-    isYouTubeLive && seekableLive ? clockCue : useClock ? clockCue || liveCue : liveCue;
+  const shown = useClock ? clockCue : liveCue;
+  const chromeOpen = settingsOpen || bottomHover;
 
   useEffect(() => {
     onShownChange?.(shown);
@@ -107,110 +116,157 @@ export function CaptionStage({
     if (kind !== "youtube") setClockCue(null);
   }, [kind, session?.generation]);
 
+  useEffect(() => {
+    const onChange = () => {
+      setFullscreen(document.fullscreenElement === stageRef.current);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  async function toggleFullscreen() {
+    const node = stageRef.current;
+    if (!node) return;
+    if (document.fullscreenElement === node) {
+      await document.exitFullscreen();
+      return;
+    }
+    await node.requestFullscreen();
+  }
+
   return (
-    <div className="relative min-h-[320px] overflow-hidden rounded-box border border-line bg-[linear-gradient(180deg,#10151f,#0c1118)] sm:min-h-[420px]">
-      {kind === "video" && playback?.has_media ? (
-        <video
-          key={`${sessionId}-${session?.generation}-video`}
-          ref={videoRef}
-          className="block max-h-[68vh] w-full bg-black"
-          src={mediaUrl}
-          controls
-          playsInline
-          autoPlay
-        />
-      ) : null}
-      {kind === "audio" && playback?.has_media ? (
-        <div className="flex min-h-[320px] flex-col justify-end bg-[#05060a] px-4 pb-24 pt-10 sm:min-h-[420px]">
-          <audio
-            key={`${sessionId}-${session?.generation}-audio`}
-            ref={audioRef}
-            className="w-full"
+    <div
+      ref={stageRef}
+      className="overflow-hidden rounded-box border border-line bg-[#05060a]"
+    >
+      <div className="relative aspect-video w-full bg-black">
+        {kind === "video" && playback?.has_media ? (
+          <video
+            key={`${sessionId}-${session?.generation}-video`}
+            ref={videoRef}
+            className="absolute inset-0 h-full w-full bg-black object-contain"
             src={mediaUrl}
             controls
+            playsInline
             autoPlay
           />
-        </div>
-      ) : null}
-      {kind === "youtube" && playback?.youtube_id ? (
-        <>
-          <YouTubeStage
-            key={`${sessionId}-${session?.generation}-${playback.youtube_id}`}
-            videoId={playback.youtube_id}
-            isLive={Boolean(playback.is_live)}
-            delaySec={delaySec}
-            readyUntil={readyUntil}
-            volume={volume}
-            onTime={(time) => setClockCue(cueAt(cues, time))}
-            onSeekableChange={setSeekableLive}
-            onHoldChange={setHoldingVod}
-          />
-          <div className="absolute inset-0 z-[5]" aria-hidden />
-        </>
-      ) : null}
-      {kind === "mic" || !kind ? (
-        <div className="grid min-h-[320px] place-items-center px-8 text-center text-muted sm:min-h-[420px]">
-          {kind === "mic"
-            ? "Live microphone. Captions appear over this stage."
-            : "Waiting for the organizer to start video, audio, or YouTube."}
-        </div>
-      ) : null}
-      {isYouTubeLive && delaySec > 0 ? (
-        <p className="absolute left-3 top-3 z-10 max-w-[90%] text-left text-[11px] uppercase tracking-[0.14em] text-muted">
-          {seekableLive
-            ? `Picture delayed ${Math.round(delaySec)}s so captions match`
-            : `This live cannot seek back. Captions lag the picture by ~${Math.round(delaySec)}s`}
-        </p>
-      ) : null}
-      {kind === "youtube" && !isYouTubeLive ? (
-        <p className="absolute left-3 top-3 z-10 max-w-[90%] text-left text-[11px] uppercase tracking-[0.14em] text-muted">
-          {holdingVod
-            ? "Holding picture until captions catch up"
-            : "Playback follows the caption timeline"}
-        </p>
-      ) : null}
-      <div className="pointer-events-none absolute inset-x-[4%] bottom-20 z-10 text-center sm:bottom-24">
-        {captionsOn && shown ? (
+        ) : null}
+        {kind === "audio" && playback?.has_media ? (
+          <div className="absolute inset-0 flex flex-col justify-end bg-[#05060a] px-4 pb-24 pt-10">
+            <audio
+              key={`${sessionId}-${session?.generation}-audio`}
+              ref={audioRef}
+              className="w-full"
+              src={mediaUrl}
+              controls
+              autoPlay
+            />
+          </div>
+        ) : null}
+        {kind === "youtube" && playback?.youtube_id ? (
           <>
-            {captionText !== "translation" ? (
-              <p
-                className={`${CAPTION_SIZE_CLASS[captionSize].primary} font-semibold leading-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]`}
-              >
-                {shown.original}
-              </p>
-            ) : null}
-            {captionText !== "original" ? (
-              <p
-                className={`${captionText === "both" ? `mt-3 ${CAPTION_SIZE_CLASS[captionSize].secondary}` : CAPTION_SIZE_CLASS[captionSize].primary} leading-tight text-signal drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]`}
-              >
-                {shown.translation}
-              </p>
-            ) : null}
+            <YouTubeStage
+              key={`${sessionId}-${session?.generation}-${playback.youtube_id}`}
+              videoId={playback.youtube_id}
+              isLive={Boolean(playback.is_live)}
+              delaySec={delaySec}
+              readyUntil={readyUntil}
+              volume={volume}
+              onTime={(time) => setClockCue(cueAt(cues, time))}
+              onSeekableChange={setSeekableLive}
+              onHoldChange={setHoldingVod}
+            />
+            <div className="absolute inset-0 z-[5]" aria-hidden />
           </>
         ) : null}
-        {captionsOn && !shown ? (
-          <p className="text-lg text-muted">Waiting for captions…</p>
+        {kind === "mic" || !kind ? (
+          <div className="absolute inset-0 grid place-items-center px-8 text-center text-muted">
+            {kind === "mic"
+              ? "Live microphone. Captions appear over this stage."
+              : "Waiting for the organizer to start video, audio, or YouTube."}
+          </div>
         ) : null}
-      </div>
-      <div className="absolute inset-x-3 bottom-3 z-20 flex justify-end">
-        <WatchControls
-          captionsOn={captionsOn}
-          transcriptOn={transcriptOn}
-          settingsOpen={settingsOpen}
-          text={captionText}
-          size={captionSize}
-          sourceLang={session?.detected_lang || session?.source_lang || "auto"}
-          targetLang={session?.target_lang || "es"}
-          volume={volume}
-          showVolume={kind === "youtube"}
-          onCaptions={onCaptions}
-          onTranscript={onTranscript}
-          onSettings={onSettings}
-          onText={onCaptionText}
-          onSize={onCaptionSize}
-          onCloseSettings={onCloseSettings}
-          onVolume={onVolume}
-        />
+        {isYouTubeLive && delaySec > 0 ? (
+          <p className="absolute left-3 top-3 z-10 max-w-[90%] text-left text-[11px] uppercase tracking-[0.14em] text-white/70">
+            {seekableLive
+              ? `Picture delayed ${Math.round(delaySec)}s so captions match`
+              : `This live cannot seek back. Captions lag the picture by ~${Math.round(delaySec)}s`}
+          </p>
+        ) : null}
+        {kind === "youtube" && !isYouTubeLive ? (
+          <p className="absolute left-3 top-3 z-10 max-w-[90%] text-left text-[11px] uppercase tracking-[0.14em] text-white/70">
+            {holdingVod
+              ? "Holding picture until captions catch up"
+              : "Playback follows the caption timeline"}
+          </p>
+        ) : null}
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-[5%] z-10 flex justify-center transition-[bottom] duration-200 motion-reduce:transition-none",
+            chromeOpen ? "bottom-20 sm:bottom-24" : "bottom-6",
+          )}
+        >
+          {captionsOn && shown ? (
+            <CaptionOverlay
+              original={shown.original}
+              translation={shown.translation}
+              text={captionText}
+              size={captionSize}
+              background={captionBg}
+            />
+          ) : null}
+          {captionsOn && !shown ? (
+            <CaptionOverlay
+              text={captionText}
+              size={captionSize}
+              background={captionBg}
+              empty
+            />
+          ) : null}
+        </div>
+        <div
+          className="absolute inset-x-0 bottom-0 z-20 h-[22%] min-h-28"
+          onMouseEnter={() => setBottomHover(true)}
+          onMouseLeave={() => setBottomHover(false)}
+          onFocusCapture={() => setBottomHover(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setBottomHover(false);
+            }
+          }}
+        >
+          <div
+            className={cn(
+              "absolute inset-x-3 bottom-3 flex justify-end transition-opacity duration-200 motion-reduce:transition-none",
+              chromeOpen
+                ? "opacity-100"
+                : "pointer-events-none opacity-0 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100",
+            )}
+          >
+          <WatchControls
+            captionsOn={captionsOn}
+            transcriptOn={transcriptOn}
+            settingsOpen={settingsOpen}
+            text={captionText}
+            size={captionSize}
+            captionBg={captionBg}
+            sourceLang={session?.detected_lang || session?.source_lang || "auto"}
+            targetLang={session?.target_lang || "es"}
+            volume={volume}
+            showVolume={kind === "youtube"}
+            fullscreen={fullscreen}
+            onCaptions={onCaptions}
+            onTranscript={onTranscript}
+            onSettings={onSettings}
+            onText={onCaptionText}
+            onSize={onCaptionSize}
+            onCaptionBg={onCaptionBg}
+            onCloseSettings={onCloseSettings}
+            onVolume={onVolume}
+            onFullscreen={() => void toggleFullscreen()}
+          />
+          </div>
+        </div>
       </div>
     </div>
   );

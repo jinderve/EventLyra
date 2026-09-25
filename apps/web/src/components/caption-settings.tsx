@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import {
   CAPTION_SIZES,
   languageLabel,
+  type CaptionBg,
   type CaptionSize,
   type CaptionText,
 } from "@/lib/watch-prefs";
@@ -55,19 +56,23 @@ export function CaptionSettings({
   open,
   text,
   size,
+  captionBg,
   sourceLang,
   targetLang,
   onText,
   onSize,
+  onCaptionBg,
   onClose,
 }: {
   open: boolean;
   text: CaptionText;
   size: CaptionSize;
+  captionBg: CaptionBg;
   sourceLang: string;
   targetLang: string;
   onText: (value: CaptionText) => void;
   onSize: (value: CaptionSize) => void;
+  onCaptionBg: (value: CaptionBg) => void;
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -113,26 +118,27 @@ export function CaptionSettings({
     >
       <p className="text-[11px] uppercase tracking-[0.14em] text-muted">Preview</p>
       <div className="mt-2 min-h-14 border border-line bg-[#05060a] px-3 py-3 text-center">
-        {sample ? (
-          <p
-            className={cn(
-              "font-semibold leading-tight",
-              preview.primary,
-              text === "translation" ? "text-signal" : "text-white",
-            )}
-          >
-            {sample}
-          </p>
-        ) : (
-          <>
+        <div
+          className={cn(
+            "inline-block max-w-full",
+            captionBg === "black" && "rounded-md bg-black/80 px-3 py-2",
+          )}
+        >
+          {sample ? (
             <p className={cn("font-semibold leading-tight text-white", preview.primary)}>
-              Original caption
+              {sample}
             </p>
-            <p className={cn("mt-1 leading-tight text-signal", preview.secondary)}>
-              Translated caption
-            </p>
-          </>
-        )}
+          ) : (
+            <>
+              <p className={cn("font-semibold leading-tight text-white", preview.primary)}>
+                Original caption
+              </p>
+              <p className={cn("mt-1 leading-tight text-white", preview.secondary)}>
+                Translated caption
+              </p>
+            </>
+          )}
+        </div>
       </div>
 
       <p className="mt-4 text-[11px] uppercase tracking-[0.14em] text-muted">Text</p>
@@ -162,6 +168,19 @@ export function CaptionSettings({
           onChange={onSize}
           labelFor={(id) => `Caption size ${id.toUpperCase()}`}
           options={CAPTION_SIZES.map((id) => ({ id, label: id.toUpperCase() }))}
+        />
+      </div>
+
+      <p className="mt-4 text-[11px] uppercase tracking-[0.14em] text-muted">Background</p>
+      <div className="mt-2">
+        <Segment
+          value={captionBg}
+          onChange={onCaptionBg}
+          labelFor={(id) => (id === "black" ? "Black caption background" : "No caption background")}
+          options={[
+            { id: "none", label: "Off" },
+            { id: "black", label: "Black" },
+          ]}
         />
       </div>
     </div>

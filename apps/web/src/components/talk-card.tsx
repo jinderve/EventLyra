@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { TalkTags } from "@/components/talk-tags";
 import type { Talk } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -41,16 +42,7 @@ export function TalkCard({
         <p className="line-clamp-3 min-h-[3.75rem] text-sm text-muted">
           {talk.description || "No description yet."}
         </p>
-        <div className="flex min-h-[2rem] flex-wrap content-start gap-2">
-          {(talk.tags || []).map((tag) => (
-            <span
-              key={tag}
-              className="rounded-[7px] border border-[#25324b] bg-[#0f1622] px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-[#9fb4d6]"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
+        <TalkTags tags={talk.tags} className="min-h-[1.5rem]" />
         <p className="mt-auto text-sm text-ink">{label}</p>
       </div>
     </>
