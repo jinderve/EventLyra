@@ -1,0 +1,13 @@
+.git
+.venv
+venv
+hf-home
+work
+.work
+**/node_modules
+**/.pytest_cache
+.vendor-ui-ux
+.vendor-frontend
+*.wav
+*.mp4
+*.safetensors

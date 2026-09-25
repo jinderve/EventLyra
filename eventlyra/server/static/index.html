@@ -10,9 +10,16 @@
   <header class="cabecera">
     <div>
       <p class="marca">EventLyra</p>
-      <h1>Subtítulos de la sesión</h1>
+      <h1>Making every event accessible, in every language.</h1>
     </div>
-    <p id="capacidad" class="capacidad">Cargando la capacidad de este proceso…</p>
+    <div class="capacidad-bloque">
+      <p id="capacidad" class="capacidad">Cargando la capacidad de este proceso…</p>
+      <p class="atajos">
+        <a href="/produccion">Panel de producción</a>
+        ·
+        <a href="/overlay?sesion=1">Overlay OBS</a>
+      </p>
+    </div>
   </header>
 
   <section class="controles" aria-label="Sesión e idioma">
@@ -24,12 +31,14 @@
         <option value="auto">Detectar</option>
         <option value="es">Español</option>
         <option value="en">Inglés</option>
+        <option value="pt">Portugués</option>
       </select>
     </label>
     <label>Traducción
       <select id="destino">
         <option value="es" selected>Español</option>
         <option value="en">Inglés</option>
+        <option value="pt">Portugués</option>
       </select>
     </label>
     <label class="archivo">Video o audio
@@ -37,6 +46,9 @@
     </label>
     <button id="microfono" type="button">Usar micrófono</button>
     <button id="detener" type="button">Detener traducción</button>
+    <button id="export-srt" type="button">Bajar SRT</button>
+    <button id="export-vtt" type="button">Bajar VTT</button>
+    <button id="export-txt" type="button">Bajar texto</button>
   </section>
 
   <p id="aviso" class="aviso" hidden></p>

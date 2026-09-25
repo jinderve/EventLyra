@@ -1,6 +1,6 @@
-# Dependencias
-node_modules/
-vendor/
+# Vendor copies of upstream skill repos (do not ship as product)
+.vendor-ui-ux/
+.vendor-frontend/
 
 # Entorno y secretos
 .env
@@ -11,6 +11,7 @@ vendor/
 credentials.json
 
 # Build / caché
+node_modules/
 dist/
 build/
 .next/
