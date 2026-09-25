@@ -80,6 +80,11 @@ class Session:
             self.cond.notify_all()
             return self.generation
 
+    def begin_microphone(self) -> int:
+        generation = self.begin(status="processing")
+        self.set_playback(kind="mic")
+        return generation
+
     def stop_processing(self) -> int:
         """Halt ingest and inference. Keep cues so export still works."""
         with self.lock:

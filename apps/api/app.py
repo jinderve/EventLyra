@@ -224,6 +224,14 @@ def create_app(settings: Settings, runtime: SharedRuntime | None = None) -> Fast
         session.stop_processing()
         return session.to_dict()
 
+    @app.post("/api/sessions/{session_id}/mic")
+    def start_microphone(session_id: str) -> dict:
+        session = require_session(session_id)
+        require_runtime()
+        app.state.url_sources.stop(session_id)
+        generation = session.begin_microphone()
+        return {"generation": generation, **session.to_dict()}
+
     @app.post("/api/sessions/{session_id}/file")
     @app.post("/api/sessions/{session_id}/archivo", include_in_schema=False)
     async def upload_file(

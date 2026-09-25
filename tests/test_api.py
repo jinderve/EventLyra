@@ -179,6 +179,18 @@ def test_reiniciar_limpia_cues_y_sube_la_generacion(tmp_path):
         assert client.get("/api/sessions/1/media").status_code == 404
 
 
+def test_mic_marca_playback_y_processing(tmp_path):
+    runtime = SharedRuntime(FakeASR(), FakeTranslator())
+    app = create_app(_settings(tmp_path), runtime=runtime)
+    with TestClient(app) as client:
+        started = client.post("/api/sessions/1/mic")
+        assert started.status_code == 200
+        data = started.json()
+        assert data["playback"]["kind"] == "mic"
+        assert data["status"] == "processing"
+        assert data["cues"] == []
+
+
 def test_stop_conserva_cues_y_permite_export(tmp_path):
     runtime = SharedRuntime(FakeASR(), FakeTranslator())
     app = create_app(_settings(tmp_path), runtime=runtime)
