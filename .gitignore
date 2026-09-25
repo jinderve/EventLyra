@@ -1,0 +1,26 @@
+# Dependencias
+node_modules/
+vendor/
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Build / caché
+dist/
+build/
+.next/
+out/
+coverage/
+*.log
+
+# IDE y SO
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
