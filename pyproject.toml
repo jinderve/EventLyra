@@ -1,0 +1,10 @@
+[project]
+name = "eventlyra"
+version = "0.1.0"
+description = "Subtítulos locales para varias sesiones que comparten una GPU"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

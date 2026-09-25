@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EventLyra</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="cabecera">
+    <div>
+      <p class="marca">EventLyra</p>
+      <h1>Subtítulos de la sesión</h1>
+    </div>
+    <p id="capacidad" class="capacidad">Cargando la capacidad de este proceso…</p>
+  </header>
+
+  <section class="controles" aria-label="Sesión e idioma">
+    <label>Sesión
+      <select id="sesion"></select>
+    </label>
+    <label>Idioma original
+      <select id="origen">
+        <option value="auto">Detectar</option>
+        <option value="es">Español</option>
+        <option value="en">Inglés</option>
+      </select>
+    </label>
+    <label>Traducción
+      <select id="destino">
+        <option value="es" selected>Español</option>
+        <option value="en">Inglés</option>
+      </select>
+    </label>
+    <label class="archivo">Video o audio
+      <input id="archivo" type="file" accept="audio/*,video/*,.mkv,.mp4,.webm,.wav,.mp3,.m4a,.flac,.ogg">
+    </label>
+    <button id="microfono" type="button">Usar micrófono</button>
+  </section>
+
+  <p id="aviso" class="aviso" hidden></p>
+  <p id="estado" class="estado" role="status"></p>
+
+  <div class="stage" id="stage">
+    <video id="video" class="medio" controls playsinline hidden></video>
+    <audio id="audio" class="medio" controls hidden></audio>
+    <div class="lienzo" id="lienzo">
+      <p>Elegí un archivo o el micrófono. Los subtítulos aparecen sobre esta vista.</p>
+    </div>
+    <div class="subs" aria-live="polite">
+      <p id="linea-original" class="original"></p>
+      <p id="linea-traduccion" class="traduccion"></p>
+    </div>
+  </div>
+
+  <section class="historial-seccion">
+    <h2>Líneas de esta sesión</h2>
+    <ol id="historial"></ol>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
