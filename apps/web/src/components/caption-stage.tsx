@@ -182,7 +182,7 @@ export function CaptionStage({
         {kind === "mic" || !kind ? (
           <div className="absolute inset-0 grid place-items-center px-8 text-center text-muted">
             {kind === "mic"
-              ? "Live microphone. Captions appear over this stage."
+              ? "Listening… speak into this tab’s microphone. Captions appear here."
               : "Waiting for the organizer to start video, audio, or YouTube."}
           </div>
         ) : null}

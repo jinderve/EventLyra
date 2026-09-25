@@ -202,6 +202,12 @@ export function stopSession(id: string) {
   return parse<Session>(fetch(`/api/sessions/${id}/stop`, { method: "POST" }));
 }
 
+export function startSessionMic(id: string) {
+  return parse<Session & { generation: number }>(
+    fetch(`/api/sessions/${id}/mic`, { method: "POST" }),
+  );
+}
+
 export function uploadSessionFile(id: string, file: File) {
   const data = new FormData();
   data.append("file", file);
