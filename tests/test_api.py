@@ -51,6 +51,7 @@ def test_sin_modelos_la_ui_abre_y_el_audio_responde_503(tmp_path):
         assert page.status_code == 200
         assert 'id="sesion"' in page.text
         assert 'id="linea-traduccion"' in page.text
+        assert 'id="subtitulo-vivo"' in page.text
         assert 'class="subs"' in page.text
         health = client.get("/api/health").json()
         assert health["modelos_cargados"] is False
@@ -81,6 +82,7 @@ def test_dos_sesiones_comparten_el_motor_y_traducen(tmp_path):
         assert health["translator_id"] == instance_id(translator)
         assert health["modelo_traduccion"] == "google/translategemma-4b-it"
         assert health["cuantizacion_asr"] == "int8_float16"
+        assert health["cuantizacion_traduccion"] == "bf16"
 
         patched = client.patch(
             "/api/sessions/1",
@@ -122,6 +124,28 @@ def test_dos_sesiones_comparten_el_motor_y_traducen(tmp_path):
         assert len(asr.calls) == 4
 
 
+def test_reiniciar_limpia_cues_y_sube_la_generacion(tmp_path):
+    runtime = SharedRuntime(FakeASR(), FakeTranslator())
+    app = create_app(_settings(tmp_path), runtime=runtime)
+    with TestClient(app) as client:
+        wav = tmp_path / "charla.wav"
+        _wav(wav, 1.0)
+        with wav.open("rb") as handle:
+            uploaded = client.post(
+                "/api/sessions/1/archivo",
+                files={"archivo": ("charla.wav", handle, "audio/wav")},
+            )
+        assert uploaded.status_code == 200
+        before = uploaded.json()["generacion"]
+        stopped = client.post("/api/sessions/1/reiniciar")
+        assert stopped.status_code == 200
+        data = stopped.json()
+        assert data["generacion"] == before + 1
+        assert data["cues"] == []
+        assert data["pendiente"] == 0
+        assert data["estado"] == "lista"
+
+
 def test_archivo_vacio_y_extension_rechazada(tmp_path):
     runtime = SharedRuntime(FakeASR(), FakeTranslator())
     app = create_app(_settings(tmp_path), runtime=runtime)
@@ -149,7 +173,13 @@ def test_la_interfaz_tiene_selector_de_sesion_e_idioma():
     assert 'id="destino"' in html
     assert 'id="linea-original"' in html
     assert 'id="linea-traduccion"' in html
+    assert 'id="subtitulo-vivo"' in html
+    assert 'id="detener"' in html
+    assert "elegirSesion" in js
     assert "/api/sessions" in js
+    assert "/reiniciar" in js
+    assert "pickSesionSync" in js
+    assert "TAB_ID" in js
     assert "getUserMedia" in js
 
 
@@ -160,7 +190,7 @@ def test_el_setup_de_windows_deja_k_explicito_y_solo_el_4b():
     assert "google/translategemma-4b-it" in setup
     assert "translategemma-12b" not in setup
     assert "translategemma-27b" not in setup
-    assert "huggingface-cli" in setup
+    assert "hf auth login" in setup
     assert "E:\\EventLyra" in setup
     assert 'Join-Path $Raiz "venv"' in setup
     assert 'Join-Path $Raiz "hf-home"' in setup

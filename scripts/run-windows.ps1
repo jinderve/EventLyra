@@ -39,9 +39,33 @@ if (-not (Test-Path $Python)) {
     throw "No se encontró $Python. Corré primero scripts\setup-windows.ps1 en la PC con la GPU."
 }
 
+function Refresh-Path {
+    $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $user = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machine;$user"
+}
+
+function Ensure-FfmpegOnPath {
+    Refresh-Path
+    if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+        return
+    }
+    $packages = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (-not (Test-Path $packages)) {
+        return
+    }
+    $exe = Get-ChildItem -Path $packages -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($exe) {
+        $env:Path = "$($exe.DirectoryName);$env:Path"
+        $env:EVENTLYRA_FFMPEG = $exe.FullName
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $WorkDir, $HfHome | Out-Null
 $env:HF_HOME = $HfHome
 $env:HUGGINGFACE_HUB_CACHE = Join-Path $HfHome "hub"
+Ensure-FfmpegOnPath
 
 Set-Location $Repo
 Write-Host "K = $SessionsPerGpu. Una sola copia de los modelos atiende esas sesiones."

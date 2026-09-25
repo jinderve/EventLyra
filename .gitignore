@@ -55,3 +55,7 @@ samples/*
 *.pth
 *.gguf
 *.onnx
+
+# Docs
+docs/
+notes.md

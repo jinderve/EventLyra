@@ -9,7 +9,7 @@ Este corte cubre archivo y micrófono. El código es MIT. Los pesos de Gemma no 
 | Pieza | Modelo | Cómo entra en 12 GB |
 | --- | --- | --- |
 | Transcripción | faster-whisper `turbo` (`mobiuslabsgmbh/faster-whisper-large-v3-turbo`) | `compute_type=int8_float16` (INT8 en GPU) |
-| Traducción | `google/translategemma-4b-it` | 8-bit con bitsandbytes, una sola copia en la GPU 0 |
+| Traducción | `google/translategemma-4b-it` | BF16, una sola copia en la GPU 0 (el 8-bit de bitsandbytes degeneraba la salida) |
 
 La traducción pasa por una interfaz reemplazable (`eventlyra/engine/translator.py`). El único proveedor implementado es `local`. No hay cliente de Vertex, Gemini ni GCP.
 
@@ -27,7 +27,7 @@ El intérprete de Python puede vivir en el perfil del usuario. El venv y los pes
 1. Creá una cuenta en [huggingface.co/join](https://huggingface.co/join).
 2. Aceptá la licencia Gemma en [google/translategemma-4b-it](https://huggingface.co/google/translategemma-4b-it).
 3. Creá un token de lectura en [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-4. `scripts/setup-windows.ps1` pide `huggingface-cli login`. El token lo guarda el CLI de Hugging Face, fuera del git. No lo copies a un `.env` versionado ni al repositorio.
+4. `scripts/setup-windows.ps1` pide el token en la misma consola (`hf auth login --token`). El token lo guarda el CLI de Hugging Face, fuera del git. No lo copies a un `.env` versionado ni al repositorio. Si el antivirus cierra una ventana del login por navegador, usá este camino: no hace falta abrir el browser del CLI.
 
 Sin esa cuenta y sin la licencia aceptada, el 4B no se puede bajar y no hay subtítulos reales.
 
@@ -52,7 +52,7 @@ El script:
 2. Crea `E:\EventLyra\venv`, `E:\EventLyra\hf-home` y `E:\EventLyra\work`.
 3. Instala las dependencias y después torch desde `https://download.pytorch.org/whl/cu128`, para que no quede la rueda de CPU.
 4. Instala ffmpeg con winget si falta.
-5. Pide el login de Hugging Face y baja solo el 4B y el turbo.
+5. Pide el token de Hugging Face en la misma consola y baja solo el 4B y el turbo.
 6. Corta si `torch.cuda.is_available()` es falso.
 
 ## Cómo correr
@@ -69,7 +69,7 @@ Para ver las dos sesiones a la vez, abrí esa dirección en dos ventanas. En cad
 
 El camino de evaluación es la transcripción en español o inglés y la traducción de inglés a español. Español a inglés usa el mismo modelo.
 
-El arranque con modelos carga los pesos una vez. El log lo dice, y `GET /api/health` muestra un solo `asr_id` y un solo `translator_id` para todas las sesiones. La GPU procesa los fragmentos en serie: las sesiones comparten pesos, no se duplican en VRAM.
+El arranque con modelos carga los pesos una vez. El log lo dice, y `GET /api/health` muestra un solo `asr_id` y un solo `translator_id` para todas las sesiones. La GPU procesa **un fragmento a la vez** y **reparte el turno entre sesiones**: no hay dos copias del modelo, pero las dos salas avanzan intercaladas.
 
 Sin GPU se puede abrir la interfaz, pero no hay subtítulos:
 

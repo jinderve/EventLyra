@@ -120,29 +120,49 @@ if ($LASTEXITCODE -ne 0) {
     throw "torch.cuda.is_available() dio False. Actualizá el driver NVIDIA y volvé a correr el script. Sin CUDA este corte no transcribe."
 }
 
-& $Python -c "import faster_whisper, transformers, fastapi, bitsandbytes; print('dependencias listas')"
+& $Python -c "import faster_whisper, transformers, fastapi, bitsandbytes, PIL; print('dependencias listas')"
 if ($LASTEXITCODE -ne 0) { throw "Falta alguna dependencia de Python." }
 
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+function Ensure-Ffmpeg {
+    Refresh-Path
+    if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+        return
+    }
     Write-Host "Se instala ffmpeg."
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         throw "No está ffmpeg ni winget. Instalá ffmpeg y dejalo en el PATH: https://www.gyan.dev/ffmpeg/builds/"
     }
     winget install --id Gyan.FFmpeg -e --accept-package-agreements --accept-source-agreements
     Refresh-Path
+    $packages = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    $exe = $null
+    if (Test-Path $packages) {
+        $exe = Get-ChildItem -Path $packages -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    }
+    if ($exe) {
+        $bin = $exe.DirectoryName
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ($userPath -notlike "*$bin*") {
+            [Environment]::SetEnvironmentVariable("Path", "$userPath;$bin", "User")
+        }
+        $env:Path = "$bin;$env:Path"
+    }
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
         throw "ffmpeg se instaló pero esta consola no lo ve. Abrí una terminal nueva, comprobá 'ffmpeg -version' y volvé a correr el script."
     }
 }
+
+Ensure-Ffmpeg
 
 [Environment]::SetEnvironmentVariable("HF_HOME", $HfHome, "User")
 [Environment]::SetEnvironmentVariable("HUGGINGFACE_HUB_CACHE", $Hub, "User")
 $env:HF_HOME = $HfHome
 $env:HUGGINGFACE_HUB_CACHE = $Hub
 
-$Hf = Join-Path $Venv "Scripts\huggingface-cli.exe"
+$Hf = Join-Path $Venv "Scripts\hf.exe"
 if (-not (Test-Path $Hf)) {
-    throw "No se encontró huggingface-cli en el venv."
+    throw "No se encontró hf.exe en el venv."
 }
 
 Write-Host ""
@@ -150,12 +170,27 @@ Write-Host "Credenciales, antes de bajar pesos:"
 Write-Host "  1. Creá una cuenta en https://huggingface.co/join si todavía no tenés."
 Write-Host "  2. Aceptá la licencia Gemma en https://huggingface.co/$ModeloGemma"
 Write-Host "  3. Creá un token de lectura en https://huggingface.co/settings/tokens"
+Write-Host "El login es por token en esta misma consola. No se abre el navegador (el CLI viejo sí lo hacía y el antivirus lo puede cortar)."
 Write-Host "El token lo guarda el CLI de Hugging Face. No lo pongas en el repositorio ni en un .env versionado."
 Write-Host "Los pesos van a $HfHome (no a C:\ y no al git)."
-Read-Host "Cuando la licencia del 4B esté aceptada, apretá Enter para hacer huggingface-cli login"
+Read-Host "Cuando la licencia del 4B esté aceptada, apretá Enter para pegar el token"
 
-& $Hf login
-if ($LASTEXITCODE -ne 0) { throw "huggingface-cli login no terminó bien." }
+$token = $env:HF_TOKEN
+if (-not $token) {
+    $secure = Read-Host "Token de lectura de Hugging Face (no se copia al repo)" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+        $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+if (-not $token) {
+    throw "No hay token. Creá uno de lectura en https://huggingface.co/settings/tokens o definí HF_TOKEN en esta sesión."
+}
+
+& $Hf auth login --token $token --no-add-to-git-credential
+if ($LASTEXITCODE -ne 0) { throw "hf auth login no terminó bien." }
 
 Write-Host "Se baja solo $ModeloGemma"
 & $Hf download $ModeloGemma

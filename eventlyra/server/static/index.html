@@ -36,6 +36,7 @@
       <input id="archivo" type="file" accept="audio/*,video/*,.mkv,.mp4,.webm,.wav,.mp3,.m4a,.flac,.ogg">
     </label>
     <button id="microfono" type="button">Usar micrófono</button>
+    <button id="detener" type="button">Detener traducción</button>
   </section>
 
   <p id="aviso" class="aviso" hidden></p>
@@ -52,6 +53,10 @@
       <p id="linea-traduccion" class="traduccion"></p>
     </div>
   </div>
+  <p id="subtitulo-vivo" class="subtitulo-vivo" aria-live="polite">
+    <span id="vivo-original"></span>
+    <span id="vivo-traduccion"></span>
+  </p>
 
   <section class="historial-seccion">
     <h2>Líneas de esta sesión</h2>

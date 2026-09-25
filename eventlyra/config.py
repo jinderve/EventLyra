@@ -14,6 +14,7 @@ WHISPER_TURBO_REPO = "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
 # INT8 en GPU según faster-whisper: pesos INT8 y cómputo float16.
 WHISPER_COMPUTE_INT8_GPU = "int8_float16"
 TRANSLATION_QUANT_8BIT = "8bit"
+TRANSLATION_DTYPE_BF16 = "bf16"
 PROVEEDOR_LOCAL = "local"
 MODELOS_GRANDES_EXCLUIDOS = ("translategemma-12b", "translategemma-27b")
 
@@ -33,7 +34,7 @@ class Settings:
     whisper_device: str = "cuda"
     whisper_compute_type: str = WHISPER_COMPUTE_INT8_GPU
     translation_model_id: str = TRANSLATEGEMMA_4B
-    translation_quantization: str = TRANSLATION_QUANT_8BIT
+    translation_quantization: str = TRANSLATION_DTYPE_BF16
     translator_provider: str = PROVEEDOR_LOCAL
 
     def validate(self) -> None:
@@ -51,8 +52,8 @@ class Settings:
                 "Este corte solo usa google/translategemma-4b-it. "
                 "No se carga TranslateGemma 12B ni 27B."
             )
-        if self.translation_quantization != TRANSLATION_QUANT_8BIT:
-            raise ValueError("La cuantización de traducción implementada es 8bit.")
+        if self.translation_quantization != TRANSLATION_DTYPE_BF16:
+            raise ValueError("La traducción local de este corte carga el 4B en bf16, no en 8-bit.")
         if self.translator_provider != PROVEEDOR_LOCAL:
             raise ValueError("El único proveedor implementado es 'local'.")
 
