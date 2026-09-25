@@ -1,0 +1,24 @@
+{
+  "terms": [
+    {
+      "canonical": "Nerdearla",
+      "variants": ["nerdearla", "NerdeArla", "Nerde Arla"]
+    },
+    {
+      "canonical": "Gemma",
+      "variants": ["gemma", "Jemma"]
+    },
+    {
+      "canonical": "CUDA",
+      "variants": ["cuda", "Cuda"]
+    },
+    {
+      "canonical": "faster-whisper",
+      "variants": ["faster whisper", "fasterwhisper", "Faster-Whisper"]
+    },
+    {
+      "canonical": "EventLyra",
+      "variants": ["eventlyra", "Event Lyra", "event lyra"]
+    }
+  ]
+}

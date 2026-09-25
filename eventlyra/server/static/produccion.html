@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EventLyra producción</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="cabecera">
+    <div>
+      <p class="marca">EventLyra</p>
+      <h1>Panel de producción</h1>
+    </div>
+    <p class="capacidad"><a href="/">Volver a subtítulos</a></p>
+  </header>
+  <p id="resumen" class="estado"></p>
+  <section class="historial-seccion">
+    <table class="tabla-produccion" id="tabla">
+      <thead>
+        <tr>
+          <th>Canal</th>
+          <th>Charla</th>
+          <th>Sala</th>
+          <th>Idiomas</th>
+          <th>Estado</th>
+          <th>Cola</th>
+          <th>Cues</th>
+          <th>Latencia</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+  <script src="/static/produccion.js"></script>
+</body>
+</html>

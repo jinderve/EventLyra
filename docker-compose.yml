@@ -1,0 +1,20 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    command:
+      [
+        "python",
+        "-m",
+        "eventlyra",
+        "--sessions-per-gpu",
+        "2",
+        "--sin-modelos",
+        "--host",
+        "0.0.0.0",
+      ]

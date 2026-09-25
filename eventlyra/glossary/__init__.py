@@ -1,0 +1,1 @@
+"""eventlyra/glossary — términos canónicos."""

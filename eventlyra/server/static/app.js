@@ -116,6 +116,66 @@ function formatoTiempo(segundos) {
   return `${minutos}:${resto}`;
 }
 
+function relojSub(segundos, vtt) {
+  const totalMs = Math.max(0, Math.round(Number(segundos) * 1000));
+  const horas = String(Math.floor(totalMs / 3600000)).padStart(2, "0");
+  const minutos = String(Math.floor((totalMs % 3600000) / 60000)).padStart(2, "0");
+  const segs = String(Math.floor((totalMs % 60000) / 1000)).padStart(2, "0");
+  const ms = String(totalMs % 1000).padStart(3, "0");
+  return `${horas}:${minutos}:${segs}${vtt ? "." : ","}${ms}`;
+}
+
+function lineasCue(cue) {
+  const original = (cue.original || "").trim();
+  const traduccion = (cue.traduccion || "").trim();
+  if (original && traduccion && original !== traduccion) {
+    return `${original}\n${traduccion}`;
+  }
+  return original || traduccion;
+}
+
+function armarExport(fmt) {
+  const ordenados = [...state.cues].sort((a, b) => a.inicio - b.inicio || a.indice - b.indice);
+  if (fmt === "srt") {
+    return ordenados.map((cue, i) => (
+      `${i + 1}\n${relojSub(cue.inicio, false)} --> ${relojSub(cue.fin, false)}\n${lineasCue(cue)}`
+    )).join("\n\n") + (ordenados.length ? "\n" : "");
+  }
+  if (fmt === "vtt") {
+    const bloques = ordenados.map((cue) => (
+      `${relojSub(cue.inicio, true)} --> ${relojSub(cue.fin, true)}\n${lineasCue(cue)}`
+    ));
+    return `WEBVTT\n\n${bloques.join("\n\n")}${ordenados.length ? "\n" : ""}`;
+  }
+  return ordenados.map((cue) => (
+    `[${relojSub(cue.inicio, false)}] ${lineasCue(cue).replace(/\n/g, " | ")}`
+  )).join("\n") + (ordenados.length ? "\n" : "");
+}
+
+function bajarTexto(nombre, texto, tipo) {
+  const blob = new Blob([texto], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nombre;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportarHistorial(fmt) {
+  if (!state.cues.length) {
+    mostrarAviso("No hay líneas para exportar en esta sesión.");
+    return;
+  }
+  const cuerpo = armarExport(fmt);
+  const tipos = {
+    srt: "application/x-subrip;charset=utf-8",
+    vtt: "text/vtt;charset=utf-8",
+    txt: "text/plain;charset=utf-8",
+  };
+  bajarTexto(`sesion-${sesionActual()}.${fmt}`, cuerpo, tipos[fmt]);
+}
+
 function pintarEstado(texto) {
   estado.textContent = texto;
 }
@@ -449,6 +509,10 @@ detenerButton.addEventListener("click", async () => {
   }
 });
 
+document.querySelector("#export-srt").addEventListener("click", () => exportarHistorial("srt"));
+document.querySelector("#export-vtt").addEventListener("click", () => exportarHistorial("vtt"));
+document.querySelector("#export-txt").addEventListener("click", () => exportarHistorial("txt"));
+
 microfonoButton.addEventListener("click", async () => {
   mostrarAviso("");
   try {
@@ -497,7 +561,12 @@ async function iniciar() {
   for (const sesion of listado.sesiones) {
     const option = document.createElement("option");
     option.value = sesion.id;
-    option.textContent = `Sesión ${sesion.id}`;
+    const titulo = sesion.titulo && sesion.titulo !== `Sesión ${sesion.id}`
+      ? sesion.titulo
+      : `Sesión ${sesion.id}`;
+    const sala = sesion.sala ? ` · ${sesion.sala}` : "";
+    const idioma = sesion.idioma_agenda ? ` (${sesion.idioma_agenda})` : "";
+    option.textContent = `${sesion.id}. ${titulo}${sala}${idioma}`;
     sesionSelect.append(option);
   }
   sesionSelect.value = await elegirSesion(listado.sesiones);

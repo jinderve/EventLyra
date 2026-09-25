@@ -1,6 +1,7 @@
 """El runtime comparte una instancia y la fábrica no llama a la nube."""
 
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,75 @@ def test_la_gpu_se_reparte_entre_sesiones(tmp_path):
     assert nombres == ["a.wav", "c.wav", "b.wav"]
 
 
+def test_dos_wav_en_el_mismo_directorio_no_se_pisan(tmp_path):
+    from eventlyra.engine.audio import write_pcm_wav
+    from eventlyra.engine.jobs import enqueue_wav
+    from eventlyra.engine.sessions import Session
+
+    class SlowASR(FakeASR):
+        def transcribe(self, path, language: str | None) -> Transcript:
+            assert Path(path).is_file(), path
+            time.sleep(0.08)
+            return super().transcribe(path, language)
+
+    settings = Settings(
+        sessions_per_gpu=1,
+        work_dir=tmp_path,
+        load_models=False,
+        chunk_seconds=1.0,
+    )
+    session = Session(id="1")
+    generation = session.begin()
+    runtime = SharedRuntime(SlowASR(), FakeTranslator())
+    first = tmp_path / "live-0000.wav"
+    second = tmp_path / "live-0001.wav"
+    write_pcm_wav(first, b"\x00\x00" * 16000, 16000)
+    write_pcm_wav(second, b"\x00\x00" * 16000, 16000)
+    runtime.start()
+    try:
+        assert enqueue_wav(session, first, settings, runtime, generation, 0.0) == 1
+        assert enqueue_wav(session, second, settings, runtime, generation, 1.0) == 1
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            with session.lock:
+                if session.pending == 0 and session.status in {"ready", "error"}:
+                    break
+            time.sleep(0.02)
+        with session.lock:
+            assert session.error is None, session.error
+            assert session.pending == 0
+            assert len(session.cues) == 2
+    finally:
+        runtime.stop()
+
+
+def test_latencia_es_inferencia_no_espera_de_cola(tmp_path):
+    class SlowASR(FakeASR):
+        def transcribe(self, path, language: str | None) -> Transcript:
+            time.sleep(0.12)
+            return super().transcribe(path, language)
+
+    asr = SlowASR()
+    translator = FakeTranslator()
+    runtime = SharedRuntime(asr, translator)
+    dones = [threading.Event() for _ in range(2)]
+    results: list[list] = [[], []]
+    runtime.submit(_job(tmp_path / "a.wav", "en", "es", results[0], dones[0], session_id="1"))
+    runtime.submit(_job(tmp_path / "b.wav", "en", "es", results[1], dones[1], session_id="1"))
+    runtime.start()
+    try:
+        assert all(item.wait(3) for item in dones)
+    finally:
+        runtime.stop()
+    first = results[0][0][0][0]
+    second = results[1][0][0][0]
+    assert first.latency_ms is not None
+    assert second.latency_ms is not None
+    assert abs(first.latency_ms - second.latency_ms) < 80
+    assert (second.queue_wait_ms or 0) >= (first.queue_wait_ms or 0)
+    assert (second.queue_wait_ms or 0) >= 80
+
+
 def test_el_mismo_idioma_no_llama_al_traductor(tmp_path):
     asr = FakeASR()
     translator = FakeTranslator()
@@ -143,7 +213,10 @@ def test_mismo_idioma_en_gemma_no_carga_pesos(tmp_path):
 
 def test_no_hay_cliente_de_gcp():
     text = "\n".join(
-        path.read_text(encoding="utf-8") for path in Path("eventlyra").rglob("*.py")
+        path.read_text(encoding="utf-8")
+        for folder in (Path("eventlyra"), Path("services"), Path("apps"))
+        for path in folder.rglob("*.py")
+        if path.is_file()
     )
     assert "google.cloud" not in text
     assert "vertexai" not in text
@@ -151,7 +224,9 @@ def test_no_hay_cliente_de_gcp():
 
 
 def test_whisper_transcribe_no_traduce():
-    text = Path("eventlyra/engine/asr.py").read_text(encoding="utf-8")
+    text = Path("services/transcription/providers/faster_whisper/provider.py").read_text(
+        encoding="utf-8"
+    )
     assert 'task="transcribe"' in text
     assert 'task="translate"' not in text
     assert "condition_on_previous_text=False" in text
@@ -164,6 +239,12 @@ def test_idioma_auto_no_se_queda_con_ingles_flojo():
     assert parece_espanol(frase)
     assert idioma_de_info(None, "en", 0.99, frase) == "es"
     assert idioma_de_info("en", "es", 0.99, frase) == "en"
+    from eventlyra.engine.asr import parece_portugues
+
+    pt = "você não está a ver a tradução"
+    assert parece_portugues(pt)
+    assert idioma_de_info(None, "en", 0.99, pt) == "pt"
+    assert idioma_de_info("pt", "en", 0.99, "hello") == "pt"
 
 
 def test_traduccion_basura_se_marca():
