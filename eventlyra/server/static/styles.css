@@ -23,7 +23,7 @@ body {
   min-height: 100vh;
 }
 
-.cabecera, .controles, .aviso, .estado, .historial-seccion {
+.cabecera, .controles, .aviso, .estado, .historial-seccion, .subtitulo-vivo {
   width: min(1100px, calc(100% - 32px));
   margin-left: auto;
   margin-right: auto;
@@ -135,11 +135,37 @@ button[aria-pressed="true"] {
   position: absolute;
   left: 4%;
   right: 4%;
-  bottom: 72px;
+  bottom: 96px;
   display: grid;
   gap: 6px;
   text-align: center;
   pointer-events: none;
+  z-index: 2;
+}
+
+.subtitulo-vivo {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--linea);
+  border-radius: 12px;
+  min-height: 3.6em;
+}
+
+.subtitulo-vivo span {
+  display: block;
+}
+
+#vivo-original {
+  color: var(--muted);
+}
+
+#vivo-traduccion {
+  color: var(--acento);
+  font-size: 1.15rem;
+  font-weight: 650;
 }
 
 .original, .traduccion {

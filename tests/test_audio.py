@@ -8,6 +8,7 @@ import pytest
 
 from eventlyra.engine.audio import (
     chunk_wav,
+    ffmpeg_executable,
     is_target_wav,
     prepare_wav,
     resample_pcm16,
@@ -71,6 +72,14 @@ def test_chunk_rechaza_un_wav_que_no_es_de_trabajo(tmp_path):
     _silencio(src, seconds=0.4, channels=2)
     with pytest.raises(AudioPrepError):
         chunk_wav(src, tmp_path / "out", 1.0, 16000)
+
+
+def test_ffmpeg_usa_la_variable_de_entorno(tmp_path, monkeypatch):
+    fake = tmp_path / "ffmpeg.exe"
+    fake.write_bytes(b"")
+    monkeypatch.setenv("EVENTLYRA_FFMPEG", str(fake))
+    monkeypatch.delenv("FFMPEG", raising=False)
+    assert Path(ffmpeg_executable()) == fake
 
 
 def test_write_pcm_wav_redondo(tmp_path):

@@ -3,12 +3,40 @@
 from __future__ import annotations
 
 import array
+import os
 import shutil
 import subprocess
 import wave
 from pathlib import Path
 
 from eventlyra.errors import AudioPrepError
+
+
+def ffmpeg_executable() -> str:
+    """Resuelve ffmpeg: env, PATH, o el paquete Gyan.FFmpeg de WinGet."""
+    env = os.environ.get("EVENTLYRA_FFMPEG") or os.environ.get("FFMPEG")
+    if env:
+        path = Path(env)
+        if path.is_dir():
+            named = path / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+            if named.is_file():
+                return str(named)
+        elif path.is_file():
+            return str(path)
+    found = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+    if found:
+        return found
+    if os.name == "nt":
+        packages = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
+        if packages.is_dir():
+            matches = sorted(packages.glob("Gyan.FFmpeg*/**/ffmpeg.exe"))
+            if not matches:
+                matches = sorted(packages.glob("**/ffmpeg.exe"))
+            if matches:
+                return str(matches[-1])
+    raise AudioPrepError(
+        "No se encontró ffmpeg en el PATH. En Windows lo instala scripts/setup-windows.ps1."
+    )
 
 
 def write_pcm_wav(path: Path, pcm: bytes, sample_rate: int) -> None:
@@ -40,7 +68,7 @@ def is_target_wav(path: Path, sample_rate: int) -> bool:
 def ffmpeg_to_wav(src: Path, dest: Path, sample_rate: int) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        "ffmpeg",
+        ffmpeg_executable(),
         "-hide_banner",
         "-loglevel",
         "error",
@@ -60,7 +88,7 @@ def ffmpeg_to_wav(src: Path, dest: Path, sample_rate: int) -> None:
         subprocess.run(command, check=True, capture_output=True)
     except FileNotFoundError as exc:
         raise AudioPrepError(
-            "No se encontró ffmpeg en el PATH. En Windows lo instala scripts/setup-windows.ps1."
+            "No se encontró ffmpeg. En Windows lo instala scripts/setup-windows.ps1."
         ) from exc
     except subprocess.CalledProcessError as exc:
         detail = exc.stderr.decode("utf-8", errors="replace").strip()

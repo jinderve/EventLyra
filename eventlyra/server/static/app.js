@@ -3,6 +3,7 @@ const origenSelect = document.querySelector("#origen");
 const destinoSelect = document.querySelector("#destino");
 const archivoInput = document.querySelector("#archivo");
 const microfonoButton = document.querySelector("#microfono");
+const detenerButton = document.querySelector("#detener");
 const aviso = document.querySelector("#aviso");
 const estado = document.querySelector("#estado");
 const capacidad = document.querySelector("#capacidad");
@@ -11,6 +12,8 @@ const audio = document.querySelector("#audio");
 const lienzo = document.querySelector("#lienzo");
 const lineaOriginal = document.querySelector("#linea-original");
 const lineaTraduccion = document.querySelector("#linea-traduccion");
+const vivoOriginal = document.querySelector("#vivo-original");
+const vivoTraduccion = document.querySelector("#vivo-traduccion");
 const historial = document.querySelector("#historial");
 
 const state = {
@@ -23,8 +26,77 @@ const state = {
   mic: null,
 };
 
+const LOCK_SESIONES = "eventlyra-sesiones-abiertas";
+const TAB_ID = crypto.randomUUID();
+
 function sesionActual() {
   return sesionSelect.value;
+}
+
+function leerLocks() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCK_SESIONES) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function escribirLocks(locks) {
+  const ahora = Date.now();
+  const vivos = {};
+  for (const [id, val] of Object.entries(locks)) {
+    const ts = typeof val === "number" ? val : Number(val && val.ts);
+    const tab = typeof val === "object" && val ? String(val.tab || "") : "";
+    if (Number.isFinite(ts) && ahora - ts < 20000) {
+      vivos[id] = { tab, ts };
+    }
+  }
+  localStorage.setItem(LOCK_SESIONES, JSON.stringify(vivos));
+  return vivos;
+}
+
+function reservarSesion(id) {
+  const locks = leerLocks();
+  locks[id] = { tab: TAB_ID, ts: Date.now() };
+  escribirLocks(locks);
+}
+
+function soltarSesion() {
+  const locks = leerLocks();
+  for (const [id, lock] of Object.entries(locks)) {
+    if (lock && lock.tab === TAB_ID) {
+      delete locks[id];
+    }
+  }
+  escribirLocks(locks);
+}
+
+function lockAjeno(lock) {
+  if (!lock) {
+    return false;
+  }
+  return String(lock.tab || "") !== TAB_ID;
+}
+
+function pickSesionSync(sesiones) {
+  const locks = escribirLocks(leerLocks());
+  const ocupadas = new Set(
+    Object.entries(locks)
+      .filter(([, lock]) => lockAjeno(lock))
+      .map(([id]) => id),
+  );
+  const libre =
+    sesiones.find((item) => !ocupadas.has(item.id))
+    || sesiones[0];
+  reservarSesion(libre.id);
+  return libre.id;
+}
+
+async function elegirSesion(sesiones) {
+  if (navigator.locks && navigator.locks.request) {
+    return navigator.locks.request("eventlyra-elegir-sesion", () => pickSesionSync(sesiones));
+  }
+  return pickSesionSync(sesiones);
 }
 
 function mostrarAviso(texto) {
@@ -49,20 +121,38 @@ function pintarEstado(texto) {
 }
 
 function cueEn(tiempo) {
-  let elegido = null;
-  for (const cue of state.cues) {
-    if (tiempo + 0.05 >= cue.inicio && tiempo <= cue.fin + 0.35) {
-      if (!elegido || cue.inicio >= elegido.inicio) {
-        elegido = cue;
-      }
+  const ordenados = [...state.cues].sort(
+    (a, b) => a.inicio - b.inicio || a.indice - b.indice,
+  );
+  if (!ordenados.length) {
+    return null;
+  }
+  if (tiempo < ordenados[0].inicio) {
+    return ordenados[0];
+  }
+  let elegido = ordenados[0];
+  for (let i = 0; i < ordenados.length; i += 1) {
+    const cue = ordenados[i];
+    const siguiente = ordenados[i + 1];
+    const fin = siguiente ? siguiente.inicio : Math.max(cue.fin + 1.5, cue.inicio + 1.5);
+    if (tiempo + 0.12 >= cue.inicio && tiempo < fin) {
+      elegido = cue;
     }
   }
   return elegido;
 }
 
 function pintarSubtitulo(cue) {
-  lineaOriginal.textContent = cue ? cue.original : "";
-  lineaTraduccion.textContent = cue ? cue.traduccion : "";
+  const original = cue ? cue.original : "";
+  const traduccion = cue ? cue.traduccion : "";
+  lineaOriginal.textContent = original;
+  lineaTraduccion.textContent = traduccion;
+  if (vivoOriginal) {
+    vivoOriginal.textContent = original;
+  }
+  if (vivoTraduccion) {
+    vivoTraduccion.textContent = traduccion;
+  }
 }
 
 function pintarHistorial() {
@@ -105,6 +195,14 @@ function reemplazarMedio(elemento, file) {
   elemento.src = url;
   state.media = elemento;
   lienzo.hidden = true;
+  elemento.addEventListener(
+    "loadeddata",
+    () => {
+      elemento.play().catch(() => {});
+      pintarDesdeReloj();
+    },
+    { once: true },
+  );
   elemento.load();
 }
 
@@ -137,9 +235,6 @@ function cerrarEventos() {
 
 function abrirEventos() {
   cerrarEventos();
-  state.cues = [];
-  pintarHistorial();
-  pintarDesdeReloj();
   const fuente = new EventSource(`/api/sessions/${sesionActual()}/eventos`);
   state.eventos = fuente;
   fuente.addEventListener("cue", (event) => {
@@ -168,6 +263,18 @@ function abrirEventos() {
       mostrarAviso(data.error);
     }
   });
+}
+
+async function detenerTraduccion() {
+  detenerMicrofono();
+  const data = await leerJson(
+    await fetch(`/api/sessions/${sesionActual()}/reiniciar`, { method: "POST" }),
+  );
+  state.generacion = data.generacion;
+  state.cues = [];
+  pintarHistorial();
+  pintarDesdeReloj();
+  pintarEstado(`Sesión ${data.id}: traducción detenida. Los fragmentos que ya estaban en GPU se descartan.`);
 }
 
 async function cargarSesion() {
@@ -325,10 +432,20 @@ archivoInput.addEventListener("change", async () => {
       body: form,
     });
     const data = await leerJson(response);
+    state.generacion = data.generacion;
     pintarEstado(`Sesión ${sesionActual()}: ${data.fragmentos} fragmentos en la cola compartida.`);
   } catch (error) {
     mostrarAviso(error.message);
     pintarEstado("No se pudo procesar el archivo.");
+  }
+});
+
+detenerButton.addEventListener("click", async () => {
+  mostrarAviso("");
+  try {
+    await detenerTraduccion();
+  } catch (error) {
+    mostrarAviso(error.message);
   }
 });
 
@@ -349,6 +466,8 @@ microfonoButton.addEventListener("click", async () => {
 
 sesionSelect.addEventListener("change", () => {
   detenerMicrofono();
+  soltarSesion();
+  reservarSesion(sesionActual());
   cargarSesion().catch((error) => mostrarAviso(error.message));
 });
 
@@ -381,7 +500,17 @@ async function iniciar() {
     option.textContent = `Sesión ${sesion.id}`;
     sesionSelect.append(option);
   }
+  sesionSelect.value = await elegirSesion(listado.sesiones);
+  capacidad.textContent = `${capacidad.textContent} Esta pestaña usa la sesión ${sesionActual()}.`;
   await cargarSesion();
+  setInterval(() => reservarSesion(sesionActual()), 4000);
+  const bucle = () => {
+    pintarDesdeReloj();
+    requestAnimationFrame(bucle);
+  };
+  requestAnimationFrame(bucle);
 }
 
 iniciar().catch((error) => mostrarAviso(error.message));
+
+window.addEventListener("pagehide", soltarSesion);

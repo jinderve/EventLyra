@@ -1,23 +1,53 @@
-"""TranslateGemma 4B en 8-bit. La carga ocurre una sola vez por instancia."""
+"""TranslateGemma 4B en BF16. La carga ocurre una sola vez por instancia."""
 
 from __future__ import annotations
 
+import logging
 import threading
 
-from eventlyra.config import TRANSLATION_QUANT_8BIT, Settings
+from eventlyra.config import TRANSLATION_DTYPE_BF16, Settings
 
 _IDIOMAS = {"es", "en"}
+_logger = logging.getLogger(__name__)
+_aviso_8bit_silenciado = False
+
+
+def traduccion_degenerada(texto: str) -> bool:
+    """Marca salidas con escrituras que no corresponden a en/es (alucinación)."""
+    if not texto or not texto.strip():
+        return True
+    for ch in texto:
+        code = ord(ch)
+        if (
+            0x0900 <= code <= 0x0D7F
+            or 0x0E00 <= code <= 0x0E7F
+            or 0x3040 <= code <= 0x30FF
+            or 0x4E00 <= code <= 0x9FFF
+            or 0xAC00 <= code <= 0xD7AF
+            or 0x0600 <= code <= 0x06FF
+        ):
+            return True
+    return False
+
+
+def _silenciar_aviso_matmul_8bit() -> None:
+    global _aviso_8bit_silenciado
+    if _aviso_8bit_silenciado:
+        return
+    logging.getLogger("bitsandbytes.autograd._functions").setLevel(logging.ERROR)
+    _aviso_8bit_silenciado = True
 
 
 class LocalTranslateGemma:
     """Una instancia, una copia de los pesos en la GPU."""
 
     def __init__(self, settings: Settings) -> None:
-        if settings.translation_quantization != TRANSLATION_QUANT_8BIT:
-            raise ValueError("LocalTranslateGemma solo carga el modelo en 8-bit.")
+        if settings.translation_quantization != TRANSLATION_DTYPE_BF16:
+            raise ValueError("LocalTranslateGemma carga el 4B en bf16.")
         self.settings = settings
         self._model = None
         self._processor = None
+        self._dtype = None
         self._load_lock = threading.Lock()
 
     @property
@@ -29,14 +59,18 @@ class LocalTranslateGemma:
             if self._model is not None:
                 return
             import torch
-            from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+            from transformers import AutoModelForImageTextToText, AutoProcessor
 
             model_id = self.settings.translation_model_id
-            quantization = BitsAndBytesConfig(load_in_8bit=True)
-            # device_map fijo a la GPU 0: una sola copia, sin partir el modelo.
+            dtype = (
+                torch.bfloat16
+                if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+                else torch.float16
+            )
+            # Una sola copia en la GPU 0. El 8-bit de bitsandbytes degeneraba la salida.
             model = AutoModelForImageTextToText.from_pretrained(
                 model_id,
-                quantization_config=quantization,
+                torch_dtype=dtype,
                 device_map={"": 0},
             )
             model.eval()
@@ -48,7 +82,9 @@ class LocalTranslateGemma:
                     model.generation_config.pad_token_id = eos
             self._model = model
             self._processor = processor
+            self._dtype = dtype
             self._torch = torch
+            _logger.info("TranslateGemma 4B cargado en %s, una copia en la GPU 0.", dtype)
 
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         cleaned = text.strip()
@@ -89,18 +125,28 @@ class LocalTranslateGemma:
             return_tensors="pt",
         )
         device = self._model.device
-        moved = {
-            key: value.to(device) if hasattr(value, "to") else value
-            for key, value in inputs.items()
-        }
-        input_len = moved["input_ids"].shape[-1]
-        max_new_tokens = min(256, max(32, len(text.split()) * 3))
-        with torch.inference_mode():
-            output = self._model.generate(
-                **moved,
-                do_sample=False,
-                max_new_tokens=max_new_tokens,
-            )
-        generated = output[0][input_len:]
+        moved = inputs.to(device, dtype=self._dtype)
+        input_len = len(moved["input_ids"][0])
+        palabras = max(1, len(text.split()))
+        max_new_tokens = min(128, max(24, palabras * 3))
         tokenizer = getattr(self._processor, "tokenizer", self._processor)
-        return tokenizer.decode(generated, skip_special_tokens=True).strip()
+        eos = getattr(tokenizer, "eos_token_id", None)
+        generate_kwargs = {
+            "do_sample": False,
+            "max_new_tokens": max_new_tokens,
+        }
+        if eos is not None:
+            generate_kwargs["eos_token_id"] = eos
+            generate_kwargs["pad_token_id"] = eos
+        with torch.inference_mode():
+            output = self._model.generate(**moved, **generate_kwargs)
+        generated = output[0][input_len:]
+        decoded = self._processor.decode(generated, skip_special_tokens=True).strip()
+        decoded = decoded.split("\n\n")[0].strip()
+        if traduccion_degenerada(decoded):
+            _logger.warning(
+                "La traducción salió degenerada (%s); se muestra el original.",
+                decoded[:80],
+            )
+            return text
+        return decoded

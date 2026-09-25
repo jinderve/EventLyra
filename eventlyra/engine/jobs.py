@@ -67,13 +67,13 @@ def _job(
         with session.lock:
             if source_lang != "auto":
                 return source_lang
-            return session.detected_lang
+            return None
 
     def publish(cues: list[Cue], detected: str | None, error: str | None) -> None:
         with session.lock:
             if generation != session.generation:
                 return
-            if detected and source_lang == "auto" and session.detected_lang is None:
+            if detected and source_lang == "auto":
                 session.detected_lang = detected
             if error:
                 session.error = error
@@ -90,6 +90,10 @@ def _job(
                 session.status = "lista"
             session.cond.notify_all()
 
+    def langs() -> tuple[str, str]:
+        with session.lock:
+            return session.source_lang, session.target_lang
+
     return ChunkJob(
         wav_path=wav_path,
         offset=offset,
@@ -98,4 +102,6 @@ def _job(
         is_current=is_current,
         resolve_language=resolve_language,
         publish=publish,
+        session_id=session.id,
+        langs=langs,
     )
