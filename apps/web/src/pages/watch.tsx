@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   loadWatchPrefs,
   saveWatchPrefs,
+  type CaptionBg,
   type CaptionSize,
   type CaptionText,
   type WatchPrefs,
@@ -28,7 +29,7 @@ export function WatchPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prefs, setPrefs] = useState<WatchPrefs>(() =>
     typeof window === "undefined"
-      ? { text: "translation", size: "s", volume: 80 }
+      ? { text: "translation", size: "s", volume: 80, captionBg: "black" }
       : loadWatchPrefs(),
   );
   const [shown, setShown] = useState<Cue | null>(null);
@@ -129,12 +130,14 @@ export function WatchPage() {
               settingsOpen={settingsOpen}
               captionText={prefs.text}
               captionSize={prefs.size}
+              captionBg={prefs.captionBg}
               volume={prefs.volume}
               onCaptions={() => setCaptionsOn((value) => !value)}
               onTranscript={() => setTranscriptOn((value) => !value)}
               onSettings={() => setSettingsOpen((value) => !value)}
               onCaptionText={(value: CaptionText) => updatePrefs({ text: value })}
               onCaptionSize={(value: CaptionSize) => updatePrefs({ size: value })}
+              onCaptionBg={(value: CaptionBg) => updatePrefs({ captionBg: value })}
               onCloseSettings={() => setSettingsOpen(false)}
               onVolume={(value) => updatePrefs({ volume: Math.max(0, Math.min(100, value)) })}
               onShownChange={setShown}

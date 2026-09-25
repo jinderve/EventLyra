@@ -6,7 +6,7 @@ EventLyra es una plataforma abierta de accesibilidad en vivo para conferencias. 
 
 El nombre junta el evento con la lira de Hermes, símbolo de comunicación. La interfaz no depende de la mitología: muestra la señal que va de la voz a la audiencia.
 
-El código de este repositorio está bajo MIT. Los pesos de TranslateGemma se bajan aparte y quedan bajo la licencia de Gemma.
+El código de este repositorio está bajo MIT. Los pesos de TranslateGemma se bajan aparte y quedan bajo la licencia de Gemma. El video de entrega para Devpost usa una charla real de Nerdearla y los subtítulos en inglés se pueden generar con este mismo proyecto.
 
 ## Camino rápido
 
@@ -33,7 +33,7 @@ No reemplaza a los intérpretes humanos. Es la pieza abierta para que la sala pu
 
 ## Flujo del producto
 
-El organizador confirma el evento, arma las sesiones que entran en `K`, elige idiomas y audio, y pone la sala en vivo. El motor transcribe, traduce y reparte el texto. La audiencia, el overlay y la exportación leen esa misma salida.
+El organizador confirma el evento, configura las sesiones que entran en `K`, publica las que están listas y opera el vivo desde el live desk. El motor transcribe, traduce y reparte el texto. La audiencia, el overlay y la exportación leen esa misma salida.
 
 ```mermaid
 flowchart TD
@@ -97,9 +97,9 @@ La interfaz de producto es la SPA de `apps/web`. El encabezado lleva a Home, Eve
 | Visitante | `/` | Presentar el producto y elegir audiencia u organizador |
 | Audiencia | `/events` | Ver las charlas y entrar a una sala |
 | Audiencia | `/watch/1` | Seguir la charla con subtítulos |
-| Organizador | `/setup/event` | Confirmar el evento y el catálogo |
-| Organizador | `/setup/sessions` | Configurar y arrancar cada canal |
-| Producción | `/live` | Operar las salas que ya están en vivo |
+| Organizador | `/setup/event` | Confirmar el evento y ver el resumen de sesiones |
+| Organizador | `/setup/sessions` | Editar idiomas y audio, y publicar una sala lista |
+| Producción | `/live` | Arrancar, parar, overlay y exportar las salas publicadas |
 | Emisión | `/overlay/1` | Quemar subtítulos en OBS o vMix |
 
 `/watch` redirige a `/events`. `/setup/languages`, `/setup/audio` y `/setup/go` redirigen a `/setup/sessions`: idioma y audio viven en la card de cada canal.
@@ -121,7 +121,7 @@ No muestra sesiones, latencia ni controles del motor.
 
 Es el lobby de la audiencia. Lista las charlas del evento con imagen, título, sala, oradores, descripción y etiquetas. Se actualiza cada 4 segundos.
 
-Los filtros son All, Live y Upcoming. Una charla en procesamiento aparece como **EN VIVO**. Si tiene canal de GPU, la card entra a `/watch/:id`. Si `K` ya está lleno, la card queda en el catálogo y no abre sala.
+Los filtros son All, Live y Upcoming. Solo se listan las charlas **publicadas**. Una charla en procesamiento aparece como **EN VIVO**. Si tiene canal de GPU, la card entra a `/watch/:id`. Si `K` ya está lleno, la card queda en el catálogo y no abre sala.
 
 Esta pantalla no configura audio ni idiomas.
 
@@ -129,7 +129,7 @@ Esta pantalla no configura audio ni idiomas.
 
 Primer paso del organizador. Muestra el nombre de la edición, cuántos canales tiene esta GPU, las etiquetas del evento y la atribución de la agenda (caché público de Backstage, Nerdearla Argentina 2026).
 
-Dos charlas de Nerdearla ya vienen cargadas, con imagen, descripción, etiquetas, oradores y URL de YouTube. **Add a talk** guarda otra en el catálogo: título, sala, track, descripción, etiquetas, oradores, imagen, URL de YouTube e idiomas de origen y destino. Si todavía hay canal libre, esa charla se ata al siguiente. Si no, queda solo en el catálogo.
+Dos charlas de Nerdearla ya vienen cargadas, con imagen, descripción, etiquetas, oradores y URL de YouTube. Esta pantalla solo resume el evento y esas sesiones: origen, destino, fuente de audio y si ya están publicadas. **Add session** vive en Sessions, no acá.
 
 **Continue to sessions** pasa al tablero.
 
@@ -137,25 +137,23 @@ El setup tiene tres pasos en la barra: Event, Sessions y Live desk.
 
 ### Configurar las salas (`/setup/sessions`)
 
-Tablero de los canales `1..K` de este proceso. Cada card es una sala y concentra lo que antes estaba repartido en pantallas de idioma y de audio:
+Tablero de los canales `1..K` de este proceso. Cada card muestra un resumen (origen, destino, audio) y deja editar la charla:
 
 - Origen: detectar, español, inglés o portugués.
 - Destino: español, inglés o portugués.
 - Audio: archivo local, micrófono de esta pestaña, o URL pública de YouTube (live o charla ya subida). YouTube no es RTMP: EventLyra tira del audio.
-- **Start live** y **Stop live**. Stop corta el micrófono de esa card y reinicia la sesión.
-- Atajos a la vista de audiencia (`/watch/:id`) y al overlay (`/overlay/:id`).
-- Exportación SRT, VTT o TXT cuando ya hay subtítulos. Si la card todavía no tiene cues, los botones no se pueden usar.
-- Lecturas de la sala: tiempo de inferencia, gente con el stream de subtítulos abierto, espera en cola y cantidad de cues.
+- **Publish** cuando la sala tiene idiomas y audio. Recién ahí aparece en Events y en el live desk.
+- **Add session** guarda otra en el catálogo. Si todavía hay canal libre, se ata al siguiente. Si no, queda solo en el catálogo.
 
-Arriba se ve si los modelos están cargados. Abajo, las charlas que quedaron solo en el catálogo porque no tienen canal en este proceso. Desde esta pantalla también se puede agregar otra charla.
-
-El micrófono es de la pestaña que apretó Start. Otra sala con micrófono necesita otra pestaña.
+Arriba se ve si los modelos están cargados.
 
 ### Desk en vivo (`/live`)
 
-Es el mismo tablero, en modo operación. No vuelve a pedir el alta de charlas. Sirve para mirar las salas que ya están corriendo: estado **EN VIVO**, inferencia, audiencia conectada al stream, espera en cola, cues, error de la sesión si lo hay, Stop y exportación.
+Solo las salas publicadas. Acá el operador arranca la charla: **Start live**, **Stop live**, overlay, audiencia, y exportación SRT, VTT o TXT. Stop corta el audio y la inferencia, pero **deja los subtítulos** para poder exportar después.
 
-La confianza se muestra como no medida. No hay un número inventado.
+Las lecturas son medidas: tiempo de inferencia, gente con el stream de subtítulos abierto, espera en cola y cantidad de cues. La confianza no se mide.
+
+El micrófono es de la pestaña que apretó Start. Otra sala con micrófono necesita otra pestaña.
 
 Desde acá se vuelve al setup o se abre el catálogo de la audiencia.
 
@@ -170,6 +168,8 @@ El centro es el video o el audio, con el subtítulo encima. Los controles de esa
 - Elegir el texto: original, traducción, o los dos.
 - Cambiar el tamaño (S, M, L, XL).
 - Bajar o subir el volumen del reproductor.
+- Poner el escenario en pantalla completa. Volumen, CC y ajustes aparecen al pasar el cursor por el video.
+- Elegir fondo negro detrás del subtítulo, como en un stream. El texto de la traducción es blanco.
 
 Al lado queda la ficha de la charla: imagen, título, sala, track, oradores, descripción y etiquetas.
 
@@ -242,7 +242,7 @@ npm run build
 powershell -ExecutionPolicy Bypass -File .\scripts\run-windows.ps1 -SessionsPerGpu 2
 ```
 
-En cada card de `/setup/sessions` elegí idiomas y audio: archivo, micrófono o URL pública de YouTube live/VOD. Start y Stop están en la misma card.
+En `/setup/sessions` elegí idiomas y audio: archivo, micrófono o URL pública de YouTube live/VOD. Publicá la sala y operala desde `/live`: Start, Stop, overlay y export.
 
 El camino de evaluación es transcripción en español o inglés, y traducción de inglés a español. Español a inglés y portugués usan el mismo modelo. El origen también acepta detección automática (`auto`).
 
@@ -266,7 +266,7 @@ La ingesta RTMP no está implementada. Start live no abre un servidor RTMP.
 
 ## Export y glosario
 
-Desde la audiencia o desde producción se puede bajar la transcripción completa:
+Desde el live desk se puede bajar la transcripción completa, también después de Stop:
 
 `GET /api/sessions/1/export?fmt=srt`
 

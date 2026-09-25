@@ -32,6 +32,7 @@ export function EventsPage() {
   }, []);
 
   const talks = (event?.talks || []).filter((talk: Talk) => {
+    if (!talk.published) return false;
     if (filter === "live") return Boolean(talk.live);
     if (filter === "upcoming") return !talk.live;
     return true;
@@ -71,7 +72,11 @@ export function EventsPage() {
         </div>
         {error ? <p className="mt-6 text-live">{error}</p> : null}
         {!talks.length && !error ? (
-          <p className="mt-10 text-muted">No talks in this filter.</p>
+          <p className="mt-10 text-muted">
+            {event?.talks?.some((talk) => !talk.published)
+              ? "No published talks yet. An organizer publishes a configured session from Sessions."
+              : "No talks in this filter."}
+          </p>
         ) : (
           <ul className="mt-10 grid auto-rows-fr items-stretch gap-5 md:grid-cols-2">
             {talks.map((talk) => (

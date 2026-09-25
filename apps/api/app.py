@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from eventlyra import __version__
 from eventlyra.config import Settings
 from services.live_engine.agenda import channels_for_k, load_cache
-from services.live_engine.talks import add_talk, decorate_talks, load_talks
+from services.live_engine.talks import add_talk, decorate_talks, load_talks, update_talk
 from services.live_engine.audio import prepare_wav, resample_pcm16, write_pcm_wav
 from services.live_engine.jobs import enqueue_wav
 from services.live_engine.loader import build_local_runtime
@@ -215,6 +215,13 @@ def create_app(settings: Settings, runtime: SharedRuntime | None = None) -> Fast
         session = require_session(session_id)
         app.state.url_sources.stop(session_id)
         session.begin(status="ready")
+        return session.to_dict()
+
+    @app.post("/api/sessions/{session_id}/stop")
+    def stop_session(session_id: str) -> dict:
+        session = require_session(session_id)
+        app.state.url_sources.stop(session_id)
+        session.stop_processing()
         return session.to_dict()
 
     @app.post("/api/sessions/{session_id}/file")
@@ -525,6 +532,24 @@ def create_app(settings: Settings, runtime: SharedRuntime | None = None) -> Fast
                 app.state.sessions.list_dicts(),
             ),
         }
+
+    @app.patch("/api/talks/{talk_id}")
+    async def patch_talk(talk_id: str, request: Request) -> dict:
+        body = await request.json()
+        try:
+            talk = update_talk(settings.work_dir, talk_id, body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        talks = load_talks(settings.work_dir)
+        app.state.talks = talks
+        app.state.sessions.apply_talks(talks)
+        decorated = decorate_talks(
+            talks,
+            settings.sessions_per_gpu,
+            app.state.sessions.list_dicts(),
+        )
+        current = next((item for item in decorated if item.get("id") == talk_id), talk)
+        return {"talk": current, "talks": decorated}
 
     @app.get("/api/agenda")
     def agenda() -> dict:

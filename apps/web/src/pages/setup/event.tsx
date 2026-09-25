@@ -1,22 +1,26 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AddTalkForm } from "@/components/add-talk-form";
-import { TalkCard } from "@/components/talk-card";
+import { Badge } from "@/components/ui/badge";
+import { TalkTags } from "@/components/talk-tags";
 import { buttonVariants } from "@/components/ui/button";
-import { getEvent, type EventPayload } from "@/lib/api";
+import { getEvent, type EventPayload, type Talk } from "@/lib/api";
+import { languageLabel } from "@/lib/watch-prefs";
+
+function audioLabel(talk: Talk) {
+  if (talk.audio_kind === "mic") return "Microphone";
+  if (talk.audio_kind === "file") return "File";
+  if (talk.youtube_url || talk.audio_kind === "url") return "YouTube";
+  return "No audio yet";
+}
 
 export function SetupEventPage() {
   const [event, setEvent] = useState<EventPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function refresh() {
+  useEffect(() => {
     getEvent()
       .then(setEvent)
       .catch((err: Error) => setError(err.message));
-  }
-
-  useEffect(() => {
-    refresh();
   }, []);
 
   const talks = event?.talks || [];
@@ -25,9 +29,8 @@ export function SetupEventPage() {
     <section className="space-y-6">
       <h1 className="text-3xl font-semibold tracking-tight">Confirm the event</h1>
       <p className="max-w-2xl text-muted">
-        The two Nerdearla default talks are already configured: image,
-        description, tags, speakers, and YouTube URL. Add another session when
-        you need a new card in Sessions and Events.
+        This is the edition summary. Sessions are configured and published in the
+        next step — not from here.
       </p>
       {error ? (
         <p className="text-live">{error}</p>
@@ -46,15 +49,8 @@ export function SetupEventPage() {
           {event.tags?.length ? (
             <div className="sm:col-span-2">
               <dt className="text-xs uppercase tracking-[0.16em] text-muted">Tags</dt>
-              <dd className="mt-2 flex flex-wrap gap-2">
-                {event.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-[7px] border border-[#25324b] bg-[#0f1622] px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-[#9fb4d6]"
-                  >
-                    {tag}
-                  </span>
-                ))}
+              <dd className="mt-2">
+                <TalkTags tags={event.tags} />
               </dd>
             </div>
           ) : null}
@@ -64,24 +60,53 @@ export function SetupEventPage() {
           </div>
         </dl>
       )}
-      <AddTalkForm onCreated={refresh} />
-      {talks.length ? (
-        <ul className="grid auto-rows-fr items-stretch gap-5 md:grid-cols-2">
-          {talks.map((talk) => (
-            <li key={talk.id} className="h-full min-h-[28rem]">
-              <TalkCard
-                talk={talk}
-                href="/setup/sessions"
-                footer={
-                  talk.channel_id
-                    ? `Channel ${talk.channel_id} · continue to sessions →`
-                    : "Saved in catalog · no GPU channel yet"
-                }
-              />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">Configured sessions</h2>
+        <p className="text-sm text-muted">
+          Source, target, and audio as they stand now. Edit or publish them in
+          Sessions.
+        </p>
+        {!talks.length ? (
+          <p className="text-muted">No sessions yet.</p>
+        ) : (
+          <ul className="grid gap-3">
+            {talks.map((talk) => (
+              <li key={talk.id} className="surface flex gap-4 p-4">
+                {talk.image_url ? (
+                  <img
+                    src={talk.image_url}
+                    alt=""
+                    className="hidden h-16 w-28 shrink-0 object-cover sm:block"
+                  />
+                ) : null}
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted">
+                        {talk.channel_id ? `Channel ${talk.channel_id}` : "Catalog"}
+                        {talk.track ? ` · ${talk.track}` : ""}
+                      </p>
+                      <h3 className="mt-1 text-base font-medium leading-tight">{talk.title}</h3>
+                      <p className="text-sm text-muted">
+                        {talk.room || "Room unpublished"}
+                        {talk.speakers?.length ? ` · ${talk.speakers.join(", ")}` : ""}
+                      </p>
+                    </div>
+                    <Badge tone={talk.published ? "online" : "muted"}>
+                      {talk.published ? "Published" : "Draft"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-ink">
+                    {languageLabel(talk.source_lang)} → {languageLabel(talk.target_lang)}
+                    <span className="text-muted"> · {audioLabel(talk)}</span>
+                  </p>
+                  <TalkTags tags={talk.tags} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <Link to="/setup/sessions" className={buttonVariants()}>
         Continue to sessions
       </Link>

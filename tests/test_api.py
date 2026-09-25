@@ -179,6 +179,33 @@ def test_reiniciar_limpia_cues_y_sube_la_generacion(tmp_path):
         assert client.get("/api/sessions/1/media").status_code == 404
 
 
+def test_stop_conserva_cues_y_permite_export(tmp_path):
+    runtime = SharedRuntime(FakeASR(), FakeTranslator())
+    app = create_app(_settings(tmp_path), runtime=runtime)
+    with TestClient(app) as client:
+        wav = tmp_path / "charla.wav"
+        _wav(wav, 1.0)
+        with wav.open("rb") as handle:
+            uploaded = client.post(
+                "/api/sessions/1/file",
+                files={"file": ("charla.wav", handle, "audio/wav")},
+            )
+        assert uploaded.status_code == 200
+        before = _esperar(client, "1")
+        assert before["cues"]
+        generation = before["generation"]
+        stopped = client.post("/api/sessions/1/stop")
+        assert stopped.status_code == 200
+        data = stopped.json()
+        assert data["generation"] == generation + 1
+        assert data["status"] == "ready"
+        assert data["cues"]
+        assert data["cues"][0]["original"] == before["cues"][0]["original"]
+        srt = client.get("/api/sessions/1/export?fmt=srt")
+        assert srt.status_code == 200
+        assert "hello friends" in srt.text
+
+
 def test_archivo_vacio_y_extension_rechazada(tmp_path):
     runtime = SharedRuntime(FakeASR(), FakeTranslator())
     app = create_app(_settings(tmp_path), runtime=runtime)

@@ -39,6 +39,8 @@ class Session:
     youtube_url: str | None = None
     track: str | None = None
     talk_id: str | None = None
+    published: bool = False
+    audio_kind: str | None = None
     watchers: int = 0
     playback_kind: str | None = None
     playback_path: Path | None = None
@@ -78,6 +80,16 @@ class Session:
             self.cond.notify_all()
             return self.generation
 
+    def stop_processing(self) -> int:
+        """Halt ingest and inference. Keep cues so export still works."""
+        with self.lock:
+            self.generation += 1
+            self.pending = 0
+            self.error = None
+            self.status = "ready"
+            self.cond.notify_all()
+            return self.generation
+
     def fail_if_current(self, generation: int, message: str) -> None:
         with self.lock:
             if generation != self.generation:
@@ -111,6 +123,10 @@ class Session:
             self.image_url = talk.get("image_url")
             self.youtube_url = talk.get("youtube_url")
             self.track = talk.get("track")
+            self.published = bool(talk.get("published"))
+            self.audio_kind = talk.get("audio_kind") or (
+                "url" if talk.get("youtube_url") else None
+            )
 
     def set_meta(
         self,
@@ -208,6 +224,8 @@ class Session:
                 "youtube_url": self.youtube_url,
                 "track": self.track,
                 "talk_id": self.talk_id,
+                "published": self.published,
+                "audio_kind": self.audio_kind,
                 "watchers": self.watchers,
                 "playback": {
                     "kind": self.playback_kind,

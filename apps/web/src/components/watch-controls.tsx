@@ -1,8 +1,16 @@
-import { Captions, ScrollText, Settings, Volume2, VolumeX } from "lucide-react";
+import {
+  Captions,
+  Maximize2,
+  Minimize2,
+  ScrollText,
+  Settings,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { CaptionSettings } from "@/components/caption-settings";
 import { cn } from "@/lib/utils";
-import type { CaptionSize, CaptionText } from "@/lib/watch-prefs";
+import type { CaptionBg, CaptionSize, CaptionText } from "@/lib/watch-prefs";
 
 function Toggle({
   pressed,
@@ -39,40 +47,48 @@ export function WatchControls({
   settingsOpen,
   text,
   size,
+  captionBg,
   sourceLang,
   targetLang,
   volume,
   showVolume = false,
+  fullscreen = false,
   onCaptions,
   onTranscript,
   onSettings,
   onText,
   onSize,
+  onCaptionBg,
   onCloseSettings,
   onVolume,
+  onFullscreen,
 }: {
   captionsOn: boolean;
   transcriptOn: boolean;
   settingsOpen: boolean;
   text: CaptionText;
   size: CaptionSize;
+  captionBg: CaptionBg;
   sourceLang: string;
   targetLang: string;
   volume: number;
   showVolume?: boolean;
+  fullscreen?: boolean;
   onCaptions: () => void;
   onTranscript: () => void;
   onSettings: () => void;
   onText: (value: CaptionText) => void;
   onSize: (value: CaptionSize) => void;
+  onCaptionBg: (value: CaptionBg) => void;
   onCloseSettings: () => void;
   onVolume: (value: number) => void;
+  onFullscreen: () => void;
 }) {
   const muted = volume === 0;
   return (
     <div
       data-watch-chrome
-      className="pointer-events-auto relative flex items-center gap-2"
+      className="pointer-events-auto relative flex flex-wrap items-center justify-end gap-2"
     >
       {showVolume ? (
         <div className="flex h-11 items-center gap-2 rounded-control border border-line bg-canvas/90 px-3">
@@ -104,10 +120,12 @@ export function WatchControls({
         open={settingsOpen}
         text={text}
         size={size}
+        captionBg={captionBg}
         sourceLang={sourceLang}
         targetLang={targetLang}
         onText={onText}
         onSize={onSize}
+        onCaptionBg={onCaptionBg}
         onClose={onCloseSettings}
       />
       <Toggle pressed={captionsOn} label="Toggle captions" onClick={onCaptions}>
@@ -128,6 +146,13 @@ export function WatchControls({
         onClick={onSettings}
       >
         <Settings className="size-4" aria-hidden />
+      </Toggle>
+      <Toggle pressed={fullscreen} label="Toggle fullscreen" onClick={onFullscreen}>
+        {fullscreen ? (
+          <Minimize2 className="size-4" aria-hidden />
+        ) : (
+          <Maximize2 className="size-4" aria-hidden />
+        )}
       </Toggle>
     </div>
   );
